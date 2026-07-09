@@ -612,6 +612,70 @@ async def test_existing_tracker_entity_id_is_preserved(
     assert hass.states.get("device_tracker.my_car_location") is None
 
 
+async def test_existing_install_new_entity_is_title_consistent(
+    hass: HomeAssistant, hass_client: Any,
+) -> None:
+    """A NEW entity added on an existing install uses the title-based scheme.
+
+    Existing users keep their pinned legacy entity_ids, but any entity created
+    afterwards (e.g. a newly-reported PID) is registered fresh against the
+    (title-named) device, so it is consistent with a brand-new install and does
+    not disturb the existing entities.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="My Car",
+        data={
+            CONF_WEBHOOK_ID: "wid_new_ent",
+            "mdns": "http://wican_ne.local",
+            "host": "http://192.168.1.11",
+            "mac": "EE:EE:EE:EE:EE:EE",
+            "device_id": "ne_dev",
+        },
+        options={CONF_POST_INTERVAL: 15},
+        unique_id="eeeeeeeeeeee",
+    )
+    entry.add_to_hass(hass)
+
+    # Legacy tracker id from an older release.
+    reg = er.async_get(hass)
+    reg.async_get_or_create(
+        "device_tracker",
+        DOMAIN,
+        f"{entry.entry_id}_device_tracker",
+        suggested_object_id="wican_device_location",
+        config_entry=entry,
+    )
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The device now reports a brand-new PID that this install has never seen.
+    client = await hass_client()
+    await client.post(
+        "/api/webhook/wid_new_ent",
+        json={
+            "status": {"device_id": "ne_dev"},
+            "autopid_data": {"rpm": 1500},
+            "config": {"rpm": {"unit": "rpm", "class": ""}},
+        },
+    )
+    await hass.async_block_till_done()
+
+    # The new PID sensor follows the title, consistent with a fresh install...
+    assert hass.states.get("sensor.my_car_rpm") is not None
+    # ...while the pre-existing tracker keeps its legacy entity_id.
+    assert reg.async_get_entity_id(
+        "device_tracker", DOMAIN, f"{entry.entry_id}_device_tracker",
+    ) == "device_tracker.wican_device_location"
+
+
 async def test_new_tracker_entity_id_follows_title(
     hass: HomeAssistant, hass_client: Any,
 ) -> None:
