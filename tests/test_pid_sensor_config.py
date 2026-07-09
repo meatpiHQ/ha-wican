@@ -1016,3 +1016,18 @@ async def test_pid_sensor_invalid_device_class_unit_combo_filtered(
         # Device class "temperature" should be filtered because bananas is not valid
         assert test_state.attributes.get("device_class") is None
 
+
+
+def test_pid_enabled_by_default_policy() -> None:
+    """High-volume per-cell PID sensors default to disabled (entity-disabled-by-default)."""
+    from custom_components.wican.sensor import _pid_enabled_by_default
+
+    # Regular sensors stay enabled.
+    assert _pid_enabled_by_default("SPEED") is True
+    assert _pid_enabled_by_default("HV_A") is True
+    assert _pid_enabled_by_default("HV_C_V_MAX") is True
+
+    # Per-cell voltage / deterioration sensors are disabled by default.
+    assert _pid_enabled_by_default("HV_C_V_001") is False
+    assert _pid_enabled_by_default("HV_C_V_188") is False
+    assert _pid_enabled_by_default("HV_C_D_042") is False

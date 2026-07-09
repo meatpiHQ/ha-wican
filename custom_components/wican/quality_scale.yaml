@@ -19,10 +19,10 @@ rules:
     status: todo
     comment: config_flow.py at 96%; needs 100% line coverage.
   config-flow:
-    status: todo
+    status: done
     comment: >
-      User and zeroconf flows implemented. Missing data_description keys and a
-      unique_id for the manual (user) flow.
+      User and zeroconf flows implemented with data_description keys; manual
+      flow sets a unique_id.
   dependency-transparency:
     status: done
     comment: No external requirements; only the internal webhook dependency.
@@ -60,8 +60,8 @@ rules:
     status: todo
     comment: Raise ConfigEntryNotReady on genuine transient setup failures.
   unique-config-entry:
-    status: todo
-    comment: Zeroconf sets unique_id; manual flow must also dedupe.
+    status: done
+    comment: Zeroconf uses MAC/device_id; manual flow dedupes on the address.
 
   # Silver
   action-exceptions:
@@ -84,8 +84,8 @@ rules:
   log-when-unavailable:
     status: todo
   parallel-updates:
-    status: todo
-    comment: Set on sensor/binary_sensor/update; missing on device_tracker.
+    status: done
+    comment: Set on sensor, binary_sensor, device_tracker, and update platforms.
   reauthentication-flow:
     status: exempt
     comment: Device has no authentication.
@@ -99,8 +99,8 @@ rules:
   diagnostics:
     status: done
   discovery-update-info:
-    status: todo
-    comment: Zeroconf re-discovery should refresh stored host/connection info.
+    status: done
+    comment: Zeroconf re-discovery refreshes stored mdns/host connection info.
   discovery:
     status: done
     comment: Zeroconf discovery with confirm step.
@@ -128,8 +128,8 @@ rules:
   entity-device-class:
     status: done
   entity-disabled-by-default:
-    status: todo
-    comment: High-volume PID sensors (e.g. per-cell voltages) must default disabled.
+    status: done
+    comment: Per-cell HV voltage/deterioration PID sensors default to disabled.
   entity-translations:
     status: todo
     comment: >
@@ -142,7 +142,8 @@ rules:
     status: todo
     comment: Migrate _attr_icon/icon= to icons.json.
   reconfiguration-flow:
-    status: todo
+    status: done
+    comment: async_step_reconfigure updates host/mDNS and reloads the entry.
   repair-issues:
     status: todo
   stale-devices:

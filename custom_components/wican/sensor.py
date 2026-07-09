@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import (
@@ -138,6 +139,20 @@ def _normalize_device_class(
     return device_class
 
 
+# High-cardinality / verbose PID keys that should be created disabled by default
+# so they don't flood the entity registry. Users can enable individually.
+# Examples: per-cell HV battery voltages (HV_C_V_001 .. HV_C_V_188) and any
+# other explicitly per-cell metrics.
+_HIGH_VOLUME_PID_PATTERN = re.compile(
+    r"^HV_C_(V|D)_\d+$",  # per-cell voltage / deterioration
+)
+
+
+def _pid_enabled_by_default(pid_key: str) -> bool:
+    """Return False for high-volume PID sensors so they default to disabled."""
+    return _HIGH_VOLUME_PID_PATTERN.match(pid_key) is None
+
+
 DYNAMIC_PID_SENSORS = {}
 
 
@@ -179,6 +194,7 @@ async def async_setup_entry(  # noqa: C901
             state_class="measurement",
             icon=icon,
             entity_category=EntityCategory.DIAGNOSTIC,
+            entity_registry_enabled_default=_pid_enabled_by_default(pid_key),
         )
         entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
         DYNAMIC_PID_SENSORS[config_entry.entry_id][pid_key] = entity
@@ -215,6 +231,7 @@ async def async_setup_entry(  # noqa: C901
                     native_unit_of_measurement=unit,
                     icon=icon,
                     entity_category=EntityCategory.DIAGNOSTIC,
+                    entity_registry_enabled_default=_pid_enabled_by_default(pid_key),
                 )
                 entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
                 new_entities.append(entity)
