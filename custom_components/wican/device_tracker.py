@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Push-based integration; entities are read-only and never poll the device.
+PARALLEL_UPDATES = 0
+
 # Entity will be named "WiCAN Device Location" with has_entity_name=True
 TRACKER_NAME = "Location"
 

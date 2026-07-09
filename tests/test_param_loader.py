@@ -175,7 +175,7 @@ class TestEvParameters:
     def test_ev_charging_params(self) -> None:
         """Test EV charging parameters are loaded correctly."""
         assert get_param_unit("CHARGER_DC_PWR") == "kW"
-        assert get_param_unit("KWH_CHARGED") == "kwh"
+        assert get_param_unit("KWH_CHARGED") == "kWh"
         assert get_param_unit("AC_C_C") == "A"
         assert get_param_unit("AC_C_V") == "V"
 

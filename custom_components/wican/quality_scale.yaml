@@ -1,0 +1,163 @@
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: Integration does not register any service actions.
+  appropriate-polling:
+    status: exempt
+    comment: >
+      Local push integration. The device POSTs data to a Home Assistant
+      webhook; the coordinator only keeps a 300s fallback interval for health
+      checks and does not actively poll the device.
+  brands:
+    status: todo
+    comment: Logo and icon PR to home-assistant/brands still required.
+  common-modules:
+    status: done
+    comment: Coordinator in coordinator.py, base entity in entity.py, models.py.
+  config-flow-test-coverage:
+    status: todo
+    comment: config_flow.py at 96%; needs 100% line coverage.
+  config-flow:
+    status: todo
+    comment: >
+      User and zeroconf flows implemented. Missing data_description keys and a
+      unique_id for the manual (user) flow.
+  dependency-transparency:
+    status: done
+    comment: No external requirements; only the internal webhook dependency.
+  docs-actions:
+    status: exempt
+    comment: No service actions.
+  docs-conditions:
+    status: exempt
+    comment: No conditions.
+  docs-high-level-description:
+    status: todo
+  docs-installation-instructions:
+    status: todo
+  docs-removal-instructions:
+    status: todo
+  docs-triggers:
+    status: exempt
+    comment: No triggers.
+  entity-event-setup:
+    status: done
+    comment: Dispatcher subscribed in async_added_to_hass via async_on_remove.
+  entity-unique-id:
+    status: done
+  has-entity-name:
+    status: done
+  runtime-data:
+    status: done
+    comment: entry.runtime_data typed as WiCANRuntimeData / WiCANConfigEntry.
+  test-before-configure:
+    status: exempt
+    comment: >
+      Device pushes to Home Assistant; there is no device connection to
+      validate at config time.
+  test-before-setup:
+    status: todo
+    comment: Raise ConfigEntryNotReady on genuine transient setup failures.
+  unique-config-entry:
+    status: todo
+    comment: Zeroconf sets unique_id; manual flow must also dedupe.
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: No service actions.
+  config-entry-unloading:
+    status: done
+    comment: async_unload_entry unregisters webhook and unloads platforms.
+  docs-configuration-parameters:
+    status: todo
+  docs-installation-parameters:
+    status: todo
+  entity-unavailable:
+    status: todo
+    comment: >
+      device_tracker reports availability; sensors/binary sensors need
+      staleness-based unavailability when the device stops pushing.
+  integration-owner:
+    status: done
+  log-when-unavailable:
+    status: todo
+  parallel-updates:
+    status: todo
+    comment: Set on sensor/binary_sensor/update; missing on device_tracker.
+  reauthentication-flow:
+    status: exempt
+    comment: Device has no authentication.
+  test-coverage:
+    status: todo
+    comment: 91.5% overall; must exceed 95%.
+
+  # Gold
+  devices:
+    status: done
+  diagnostics:
+    status: done
+  discovery-update-info:
+    status: todo
+    comment: Zeroconf re-discovery should refresh stored host/connection info.
+  discovery:
+    status: done
+    comment: Zeroconf discovery with confirm step.
+  docs-data-update:
+    status: todo
+  docs-examples:
+    status: todo
+  docs-known-limitations:
+    status: todo
+  docs-supported-devices:
+    status: todo
+  docs-supported-functions:
+    status: todo
+  docs-troubleshooting:
+    status: todo
+  docs-use-cases:
+    status: todo
+  dynamic-devices:
+    status: exempt
+    comment: >
+      One device per config entry; no post-setup device enumeration. Dynamic
+      PID entities are added at runtime within the single device.
+  entity-category:
+    status: done
+  entity-device-class:
+    status: done
+  entity-disabled-by-default:
+    status: todo
+    comment: High-volume PID sensors (e.g. per-cell voltages) must default disabled.
+  entity-translations:
+    status: todo
+    comment: >
+      Static entities translated; dynamic PID sensors use raw device keys
+      (documented limitation).
+  exception-translations:
+    status: todo
+    comment: Audit all raised errors for translation keys.
+  icon-translations:
+    status: todo
+    comment: Migrate _attr_icon/icon= to icons.json.
+  reconfiguration-flow:
+    status: todo
+  repair-issues:
+    status: todo
+  stale-devices:
+    status: exempt
+    comment: >
+      One device per config entry, removed with the entry; no multi-device
+      enumeration to prune.
+
+  # Platinum
+  async-dependency:
+    status: done
+    comment: All I/O is async; no synchronous external dependency.
+  inject-websession:
+    status: done
+    comment: Uses async_get_clientsession(hass).
+  strict-typing:
+    status: todo
+    comment: Some function signatures still lack annotations.
