@@ -17,5 +17,5 @@ bruno/
 # Coverage artifacts
 .coverage
 
-*.md
-!README.md
+# Local scratch / working notes (not tracked)
+notes/
