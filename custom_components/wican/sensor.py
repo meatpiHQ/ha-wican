@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import EntityCategory
 
 from .attributes import SENSOR_DESCRIPTIONS, WiCANSensorEntityDescription, get_sensor_attributes
 from .const import DOMAIN
@@ -177,6 +178,7 @@ async def async_setup_entry(  # noqa: C901
             native_unit_of_measurement=unit,
             state_class="measurement",
             icon=icon,
+            entity_category=EntityCategory.DIAGNOSTIC,
         )
         entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
         DYNAMIC_PID_SENSORS[config_entry.entry_id][pid_key] = entity
@@ -212,6 +214,7 @@ async def async_setup_entry(  # noqa: C901
                     device_class=device_class,
                     native_unit_of_measurement=unit,
                     icon=icon,
+                    entity_category=EntityCategory.DIAGNOSTIC,
                 )
                 entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
                 new_entities.append(entity)
@@ -310,7 +313,6 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
         super().__init__(config_entry, entity_description)
         self._pid_key = pid_key
         self._attr_unique_id = f"{config_entry.entry_id}_pid_{pid_key}"
-        self._attr_entity_category = None  # Regular sensor
         self._pending_value = None
         self._attr_native_value = None  # Initialize to None
 

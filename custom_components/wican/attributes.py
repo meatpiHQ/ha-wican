@@ -15,21 +15,8 @@ class WiCANSensorEntityDescription(SensorEntityDescription):
 
 SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
     WiCANSensorEntityDescription(
-        key="wifi_mode",
-        translation_key="wifi_mode",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:wifi",
-        extra_attributes=[
-            "ap_ch",
-            "ap_auto_disable",
-            "sta_status",
-            "mdns",
-        ],
-    ),
-    WiCANSensorEntityDescription(
         key="batt_voltage",
         translation_key="batt_voltage",
-        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:car-battery",
         device_class=SensorDeviceClass.VOLTAGE,
         native_unit_of_measurement="V",
@@ -40,6 +27,18 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
             "batt_alert_protocol",
             "batt_alert_topic",
             "batt_alert_time",
+        ],
+    ),
+    WiCANSensorEntityDescription(
+        key="wifi_mode",
+        translation_key="wifi_mode",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:wifi",
+        extra_attributes=[
+            "ap_ch",
+            "ap_auto_disable",
+            "sta_status",
+            "mdns",
         ],
     ),
     WiCANSensorEntityDescription(
@@ -61,21 +60,20 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
     WiCANBinarySensorEntityDescription(
+        key="ecu_status",
+        translation_key="ecu_status",
+        icon="mdi:car-connected",
+        extra_attributes=[
+            "obd_chip_status",
+        ],
+    ),
+    WiCANBinarySensorEntityDescription(
         key="ble_status",
         translation_key="ble_status",
         icon="mdi:bluetooth",
         entity_category=EntityCategory.DIAGNOSTIC,
         extra_attributes=[
             "ble_power",
-        ],
-    ),
-    WiCANBinarySensorEntityDescription(
-        key="ecu_status",
-        translation_key="ecu_status",
-        icon="mdi:car-connected",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        extra_attributes=[
-            "obd_chip_status",
         ],
     ),
 )
