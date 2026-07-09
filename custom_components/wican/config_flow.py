@@ -50,6 +50,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             mdns = user_input.get("mdns")
             host = user_input.get(CONF_HOST)
             title = host or mdns or "WiCAN"
+
+            # Prevent duplicate manual setups of the same device. A manually
+            # entered device has no MAC/device_id yet, so key off the normalized
+            # connection address the user provided.
+            manual_unique_id = _format_http_url(mdns or host, None) or (mdns or host)
+            if manual_unique_id:
+                await self.async_set_unique_id(manual_unique_id)
+                self._abort_if_unique_id_configured()
+
             webhook_id = uuid4().hex
             webhook_url = resolve_webhook_url(
                 self.hass,
@@ -119,13 +128,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             unique_id = f"{base_id}-{host}:{port}"
             _LOGGER.debug("Using hostname-based unique_id: %s", unique_id)
 
-        await self.async_set_unique_id(unique_id)
-        self._abort_if_unique_id_configured()
-
         # Store mdns/host for setup to attempt webhook registration later
         mdns_target = hostname or host
         mdns_url = _format_http_url(mdns_target, port)
         host_url = _format_http_url(host_ip or host, port)
+
+        await self.async_set_unique_id(unique_id)
+        # If already configured, refresh the stored connection info from this
+        # discovery so IP/hostname changes propagate (discovery-update-info).
+        self._abort_if_unique_id_configured(
+            updates={
+                k: v
+                for k, v in {"mdns": mdns_url, CONF_HOST: host_url}.items()
+                if v
+            },
+        )
 
         _LOGGER.info("WiCAN discovered via Zeroconf: name=%s hostname=%s url=%s", name, hostname, mdns_url)
 
@@ -180,6 +197,41 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "name": self.discovered_name or "WiCAN",
                 "url": self.discovered_mdns or self.discovered_host or "Unknown",
             },
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Handle reconfiguration of an existing entry (host/mDNS)."""
+        reconfigure_entry = self._get_reconfigure_entry()
+
+        if user_input is not None:
+            data = dict(reconfigure_entry.data)
+            mdns = user_input.get("mdns")
+            host = user_input.get(CONF_HOST)
+            if mdns:
+                data["mdns"] = _format_http_url(mdns, None) or mdns
+            if host:
+                data["host"] = _format_http_url(host, None) or host
+            return self.async_update_reload_and_abort(
+                reconfigure_entry,
+                data=data,
+            )
+
+        current = reconfigure_entry.data
+        data_schema = vol.Schema(
+            {
+                vol.Required(
+                    "mdns", default=current.get("mdns", ""),
+                ): str,
+                vol.Optional(
+                    CONF_HOST, default=current.get("host", ""),
+                ): str,
+            },
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=data_schema,
         )
 
     @staticmethod

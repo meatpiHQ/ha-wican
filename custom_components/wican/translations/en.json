@@ -7,6 +7,22 @@
           "data": {
             "mdns": "Hostname or IP address",
             "host": "Alternative IP (optional)"
+          },
+          "data_description": {
+            "mdns": "The mDNS hostname (e.g. wican_xxxx.local) or IP address that Home Assistant uses to reach the device.",
+            "host": "An optional alternative IP address to try if the hostname cannot be resolved."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure WiCAN",
+          "description": "Update the address Home Assistant uses to reach this WiCAN device.",
+          "data": {
+            "mdns": "Hostname or IP address",
+            "host": "Alternative IP (optional)"
+          },
+          "data_description": {
+            "mdns": "The mDNS hostname (e.g. wican_xxxx.local) or IP address that Home Assistant uses to reach the device.",
+            "host": "An optional alternative IP address to try if the hostname cannot be resolved."
           }
         },
         "zeroconf_confirm": {
@@ -15,6 +31,8 @@
         }
       },
       "abort": {
+        "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
         "cloud_not_connected": "[%key:common::config_flow::abort::cloud_not_connected%]",
         "webhook_not_internet_accessible": "[%key:common::config_flow::abort::webhook_not_internet_accessible%]"
       },

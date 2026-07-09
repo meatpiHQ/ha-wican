@@ -575,9 +575,106 @@ async def test_string_ip_none(
 ) -> None:
     """Test _string_ip with None input (line 243)."""
     from custom_components.wican.config_flow import _string_ip
-    
+
     result = _string_ip(None)
     assert result is None
+
+
+async def test_user_flow_duplicate_aborts(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Test manual setup of the same host is deduplicated (unique-config-entry)."""
+    existing = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="http://wican_test.local",
+        data={CONF_WEBHOOK_ID: "existing", "mdns": "http://wican_test.local"},
+    )
+    existing.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"mdns": "wican_test.local"},
+    )
+
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "already_configured"
+
+
+async def test_zeroconf_updates_connection_info(
+    hass: HomeAssistant,
+) -> None:
+    """Test rediscovery updates stored connection info (discovery-update-info)."""
+    existing = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aabbccddeeff",
+        data={
+            CONF_WEBHOOK_ID: "existing",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "mdns": "http://wican_old.local:80",
+        },
+    )
+    existing.add_to_hass(hass)
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.150",
+        ip_addresses=["192.168.1.150"],
+        hostname="wican_new.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={"mac": b"AA:BB:CC:DD:EE:FF"},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    # Stored connection info should have been refreshed from the new discovery.
+    assert "wican_new" in existing.data["mdns"]
+    assert "wican_old" not in existing.data["mdns"]
+
+
+async def test_reconfigure_flow(
+    hass: HomeAssistant,
+) -> None:
+    """Test the reconfigure flow updates host/mDNS (reconfiguration-flow)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aabbccddeeff",
+        data={
+            CONF_WEBHOOK_ID: "test_webhook",
+            "mdns": "http://wican_test.local:80",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+    with patch(
+        "custom_components.wican.async_setup_entry",
+        return_value=True,
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"mdns": "wican_moved.local", "host": "192.168.1.77"},
+        )
+        await hass.async_block_till_done()
+
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "reconfigure_successful"
+    assert entry.data["mdns"] == "http://wican_moved.local"
+    assert entry.data["host"] == "http://192.168.1.77"
 
 
 
