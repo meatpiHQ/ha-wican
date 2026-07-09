@@ -75,14 +75,17 @@ rules:
   docs-installation-parameters:
     status: todo
   entity-unavailable:
-    status: todo
+    status: done
     comment: >
-      device_tracker reports availability; sensors/binary sensors need
-      staleness-based unavailability when the device stops pushing.
+      Coordinator tracks last push time and raises UpdateFailed when the device
+      goes stale, so all coordinator entities become unavailable.
   integration-owner:
     status: done
   log-when-unavailable:
-    status: todo
+    status: done
+    comment: >
+      DataUpdateCoordinator logs the stale (UpdateFailed) transition and the
+      subsequent recovery once each.
   parallel-updates:
     status: done
     comment: Set on sensor, binary_sensor, device_tracker, and update platforms.

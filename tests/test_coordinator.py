@@ -230,6 +230,51 @@ async def test_coordinator_fallback_polling(
     assert coordinator.data == initial_data
 
 
+async def test_coordinator_becomes_unavailable_when_stale(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_webhook_data: dict,
+) -> None:
+    """Device goes unavailable when no push arrives within the staleness window."""
+    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    await coordinator.async_config_entry_first_refresh()
+
+    # A fresh push keeps the device available.
+    coordinator.handle_webhook_data(mock_webhook_data)
+    assert await coordinator._async_update_data() == coordinator.data
+
+    # Simulate a long silence: move last push well past the staleness threshold.
+    coordinator._last_push = dt_util.utcnow() - timedelta(hours=3)
+
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+
+async def test_coordinator_recovers_after_new_push(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_webhook_data: dict,
+) -> None:
+    """A new push after staleness recovers availability."""
+    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    await coordinator.async_config_entry_first_refresh()
+
+    coordinator.handle_webhook_data(mock_webhook_data)
+    coordinator._last_push = dt_util.utcnow() - timedelta(hours=3)
+
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    # New push refreshes the timestamp and clears the stale state.
+    coordinator.handle_webhook_data(mock_webhook_data)
+    assert coordinator.last_update_success is True
+    assert await coordinator._async_update_data() == coordinator.data
+
+
 async def test_coordinator_first_device_id_acceptance(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,

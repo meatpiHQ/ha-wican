@@ -45,3 +45,8 @@ GITHUB_RELEASES_UPDATE_INTERVAL = 3600  # 1 hour
 
 # WiCAN Data Coordinator (push-based fallback polling)
 WICAN_DATA_UPDATE_INTERVAL = 300  # seconds (5 minutes)
+
+# Device availability: mark entities unavailable when the device has not pushed
+# data within max(post_interval * DEVICE_STALE_FACTOR, MIN_DEVICE_STALE_SECONDS).
+DEVICE_STALE_FACTOR = 5
+MIN_DEVICE_STALE_SECONDS = 120

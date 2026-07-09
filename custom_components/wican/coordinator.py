@@ -7,11 +7,21 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import ConfigEntryError
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, WICAN_DATA_UPDATE_INTERVAL
+from .const import (
+    CONF_POST_INTERVAL,
+    DEFAULT_POST_INTERVAL,
+    DEVICE_STALE_FACTOR,
+    DOMAIN,
+    MIN_DEVICE_STALE_SECONDS,
+    WICAN_DATA_UPDATE_INTERVAL,
+)
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from homeassistant.core import HomeAssistant
 
     from . import WiCANConfigEntry
@@ -34,6 +44,7 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Initialize the coordinator."""
         self.config_entry = config_entry
         self._data: dict[str, Any] = {}
+        self._last_push: datetime | None = None
 
         super().__init__(
             hass,
@@ -44,14 +55,30 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from WiCAN device.
+        """Health-check the push-based device.
 
-        This is a push-based integration, so we don't actively poll.
-        This method exists for health checks and fallback scenarios.
-        The real updates come through handle_webhook_data().
+        This is a push-based integration, so we don't actively poll. This
+        periodic callback exists to detect when the device has stopped pushing:
+        if no webhook data has arrived within the staleness window, raise
+        UpdateFailed so entities become unavailable. DataUpdateCoordinator logs
+        the transition to unavailable and the subsequent recovery once each
+        (log-when-unavailable).
         """
-        # For push-based integrations, we just return the current data
-        # The webhook handler will call async_set_updated_data() when new data arrives
+        if self._last_push is None:
+            # No push received yet; stay available while waiting for the device.
+            return self._data
+
+        post_interval = self.config_entry.options.get(
+            CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL,
+        )
+        threshold = max(post_interval * DEVICE_STALE_FACTOR, MIN_DEVICE_STALE_SECONDS)
+        elapsed = (dt_util.utcnow() - self._last_push).total_seconds()
+        if elapsed > threshold:
+            raise UpdateFailed(
+                f"No data received from WiCAN device in {elapsed:.0f}s "
+                f"(threshold {threshold}s)",
+            )
+
         return self._data
 
     async def async_config_entry_first_refresh(self) -> None:
@@ -79,7 +106,11 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Update internal data store
         self._data.update(data)
 
-        # Notify all entities that data has been updated
+        # Record the push time so the health-check can detect a stale device.
+        self._last_push = dt_util.utcnow()
+
+        # Notify all entities that data has been updated (also marks the
+        # coordinator successful again, recovering from any stale state).
         self.async_set_updated_data(self._data)
 
     def _validate_device_identity(self, data: dict[str, Any]) -> None:
