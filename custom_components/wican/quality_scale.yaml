@@ -33,11 +33,14 @@ rules:
     status: exempt
     comment: No conditions.
   docs-high-level-description:
-    status: todo
+    status: done
+    comment: README opens with what WiCAN is and what the integration does.
   docs-installation-instructions:
-    status: todo
+    status: done
+    comment: README has prerequisites + HACS/My HA step-by-step install.
   docs-removal-instructions:
-    status: todo
+    status: done
+    comment: README has a "Removing the integration" section.
   docs-triggers:
     status: exempt
     comment: No triggers.
@@ -76,9 +79,11 @@ rules:
     status: done
     comment: async_unload_entry unregisters webhook and unloads platforms.
   docs-configuration-parameters:
-    status: todo
+    status: done
+    comment: README documents the Post Interval option (default, range, effect).
   docs-installation-parameters:
-    status: todo
+    status: done
+    comment: README documents the manual setup inputs (mdns, host).
   entity-unavailable:
     status: done
     comment: >
@@ -113,19 +118,26 @@ rules:
     status: done
     comment: Zeroconf discovery with confirm step.
   docs-data-update:
-    status: todo
+    status: done
+    comment: README "How data updates work" explains the push/webhook model.
   docs-examples:
-    status: todo
+    status: done
+    comment: README has automation examples (low battery, arrived home).
   docs-known-limitations:
-    status: todo
+    status: done
+    comment: README has a "Known limitations" section.
   docs-supported-devices:
-    status: todo
+    status: done
+    comment: README lists WiCAN OBD-II / Pro / USB support.
   docs-supported-functions:
-    status: todo
+    status: done
+    comment: README "Supported functionality" lists entities per platform.
   docs-troubleshooting:
-    status: todo
+    status: done
+    comment: README has a Troubleshooting section.
   docs-use-cases:
-    status: todo
+    status: done
+    comment: README has a "Use cases" section.
   dynamic-devices:
     status: exempt
     comment: >

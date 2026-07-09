@@ -1,74 +1,228 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
-# About
-This is the official HomeAssistant integration for [WiCAN by meatpi](https://github.com/meatpiHQ/wican-fw).
+# WiCAN for Home Assistant
 
-This integration is available via HACS, and not part of the default HomeAssistant integrations. 
+This is the official Home Assistant integration for [WiCAN by meatPi](https://github.com/meatpiHQ/wican-fw).
 
-# Documentation
-This repository contains only documentation for the HomeAssistant integration of WiCAN.
+WiCAN is an OBD-II CAN-bus adapter that reads data from your vehicle and pushes
+it to Home Assistant over your local network. The integration exposes that data
+as sensors (battery voltage, and any OBD-II PIDs you have configured on the
+device), tracks connection status, follows the vehicle's GPS location where
+supported, and can update the device firmware.
 
-The documentation for the devices (e.g. WiCAN OBD or WiCAN USB) can be found in the offical [WiCAN Device Documentation](https://meatpihq.github.io/wican-fw/).
-There you will also find configuration instructions for the device itself (e.g. Firmware Updates / Retrieving data for your specific car model) 
+This integration is distributed via HACS and is not part of the default Home
+Assistant integrations.
 
-# Integration Status
-It is very much in an Alpha stage at the moment, and under constant changes, hoping to get it in a Beta state soon where we could recommend starting to use it.
+The documentation for the hardware itself (WiCAN OBD / WiCAN USB / WiCAN-Pro),
+including how to wire it up, configure protocols, and set up per-vehicle PIDs,
+lives in the official [WiCAN device documentation](https://meatpihq.github.io/wican-fw/).
 
-# Installation
+## Supported devices
 
-## Manual Installation
-1. Add the integration repository to HACS and install the WiCAN integration.
-   - Follow the official guide to [add a custom repository](https://www.hacs.xyz/docs/faq/custom_repositories/).
-     - Repository URL: 'https://github.com/jay-oswald/ha-wican'
-     - Type: 'Integration'
-   - Follow the official guide to [download a repository](https://www.hacs.xyz/docs/use/repositories/dashboard/#downloading-a-repository)
-2. Restart home assistant
-3. Continue with Configuration steps below
+| Device | Supported | Notes |
+|---|---|---|
+| WiCAN OBD-II | ✅ | Connects to the vehicle's OBD-II port. |
+| WiCAN-Pro | ✅ | Adds support for multiple webhook URLs on firmware `v4.49+` (local HTTP + external HTTPS). |
+| WiCAN USB | ✅ | Same integration; requires network connectivity to Home Assistant. |
 
-## Installation via My Home Assistant
-1. Add the integration through this link: 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jay-oswald&repository=ha-wican&category=integration)
-2. Restart home assistant
-3. Continue with Configuration steps below
+The device must be running firmware with the **AutoPID** protocol enabled and be
+reachable from Home Assistant on the local network. Very old firmware without a
+MAC address / device ID in its mDNS advertisement is still supported but falls
+back to a hostname-based identifier.
+
+## Supported functionality
+
+The integration is a **local push** integration: the WiCAN device sends data to
+a Home Assistant webhook on an interval you configure. It creates one device per
+WiCAN adapter with the following entities:
+
+| Platform | Entity | Description |
+|---|---|---|
+| `sensor` | Battery Voltage | Vehicle battery voltage reported by the device. |
+| `sensor` | WiFi Mode, VPN Status, Uptime | Diagnostic sensors about the device itself. |
+| `sensor` | Dynamic PID sensors | One sensor per OBD-II PID configured on the device (e.g. speed, coolant temperature, state of charge). Created automatically as data arrives. High-volume per-cell battery voltages are created **disabled by default**. |
+| `binary_sensor` | ECU Online | Whether the vehicle ECU is currently responding. |
+| `binary_sensor` | Bluetooth Enabled | Diagnostic BLE status. |
+| `device_tracker` | Location | GPS location of the device/vehicle, where GPS data is available. |
+| `update` | Firmware | Shows available WiCAN firmware from GitHub and installs it over the air. |
+
+Dynamic PID sensors are named from the raw OBD-II keys provided by the device,
+because those keys are only known at runtime (see
+[Known limitations](#known-limitations)).
+
+## How data updates work
+
+WiCAN does not poll the vehicle from Home Assistant. Instead, the device
+**pushes** data to a Home Assistant webhook:
+
+1. During setup the integration registers a webhook URL on the device.
+2. The device POSTs its status and PID data to that URL on the configured
+   **Post Interval** (default 15 seconds).
+3. Entities update immediately when each push arrives.
+
+If the device stops pushing (for example the car is parked and the adapter is in
+sleep mode), the entities are marked **unavailable** after several missed
+intervals, and become available again on the next push. A repair issue is raised
+if Home Assistant cannot register its webhook on the device at all.
+
+## Installation
+
+### Prerequisites
+- A WiCAN device on the same network as Home Assistant, powered and reachable.
+- The device protocol set to **AutoPID** (see the device documentation).
+- [HACS](https://hacs.xyz/) installed in Home Assistant.
+
+### Install via HACS
+1. Add this repository to HACS as a custom repository
+   ([guide](https://www.hacs.xyz/docs/faq/custom_repositories/)):
+   - Repository URL: `https://github.com/jay-oswald/ha-wican`
+   - Type: `Integration`
+2. Download the WiCAN integration in HACS.
+3. Restart Home Assistant.
+4. Continue with **Configuration** below.
+
+### Install via My Home Assistant
+1. Use this link:
+   [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jay-oswald&repository=ha-wican&category=integration)
+2. Restart Home Assistant.
+3. Continue with **Configuration** below.
 
 ## Configuration
-- In Home Assistant, go to 'Settings > Devices & Services > Integrations'.
-- Click on 'Add Integration', search for WiCAN, and select it.
-- Enter the mDNS/hostname (wican_xxxxxxxxxxxx.local) or IP-Address of WiCAN device to connect the WiCAN device. If you have multiple WiCAN devices repeat these steps for the other devices.
-- After setup, use the WiCAN integration's *Configure* button to adjust the **Post Interval** (in seconds) that controls how often the device pushes data to Home Assistant. The default is 15 seconds.
+
+WiCAN devices are usually **discovered automatically** over mDNS/Zeroconf — you
+will see a discovered device prompt in *Settings → Devices & Services*. Use
+manual setup only if discovery did not find your device.
+
+### Installation parameters (manual setup)
+When adding the integration manually you provide:
+
+| Field | Required | Description |
+|---|---|---|
+| **Hostname or IP address** (`mdns`) | Yes | The device's mDNS hostname (e.g. `wican_xxxxxxxxxxxx.local`) or its IP address. |
+| **Alternative IP** (`host`) | No | An optional fallback IP address to try if the hostname cannot be resolved. |
+
+If you have multiple WiCAN devices, repeat the setup for each one.
+
+### Configuration parameters (options)
+After setup, use the integration's **Configure** button:
+
+| Option | Default | Range | Description |
+|---|---|---|---|
+| **Post Interval** | 15 s | 1–3600 s | How often the device pushes data to Home Assistant. Lower values mean more frequent updates and more network traffic. |
+
+You can also change the device address later with the **Reconfigure** option
+without deleting and re-adding the integration.
 
 ### Webhook URL behavior
 - WiCAN devices use a single local HTTP webhook URL.
-- WiCAN-PRO devices on firmware `v4.49+` can receive multiple webhook URLs.
-- When available, Home Assistant sends WiCAN-PRO devices a local HTTP webhook URL first and an external HTTPS webhook URL second, such as Nabu Casa or a reverse proxy.
-- If no local HTTP Home Assistant URL is available, WiCAN-PRO `v4.49+` can fall back to a single external HTTPS webhook URL.
+- WiCAN-Pro devices on firmware `v4.49+` can receive multiple webhook URLs.
+- When available, Home Assistant sends WiCAN-Pro devices a local HTTP webhook URL
+  first and an external HTTPS webhook URL second (such as Nabu Casa or a reverse
+  proxy).
+- If no local HTTP Home Assistant URL is available, WiCAN-Pro `v4.49+` can fall
+  back to a single external HTTPS webhook URL.
 
-Result: After completing installation and configuration, WiCAN will be connected to Home Assistant, and you will be able to monitor the available car parameters directly from the Home Assistant interface.
+## Use cases
 
-# Troubleshooting
-### Not possible to add a device via IP-Address or mDNS/hostname
-Potential root cause: The WiCAN device might not be accessible or the protocol is not set to "AutoPID".
+- **Battery health monitoring** — track resting battery voltage and get alerted
+  before a flat battery leaves you stranded.
+- **EV charging & range** — monitor state of charge, charging power, and range
+  PIDs (on vehicles that expose them) to automate charging notifications.
+- **Trip / location logging** — use the GPS `device_tracker` to record where the
+  vehicle is and trigger zone-based automations (e.g. "car arrived home").
+- **Engine diagnostics** — surface coolant temperature, RPM, fuel level and other
+  PIDs on a dashboard.
 
-To fix the issue:
-1. Please make sure that the WiCAN device is accesssible from your web browser. If it is not available, ensure that it is not in sleep mode [WiCAN Docs: Sleep Mode](https://meatpihq.github.io/wican-fw/config/sleep-mode)
-2. Please make sure that the WiCAN device uses protocol "AutoPID" via the WiCAN device settings.
+## Automation examples
 
-### The device is added, but all entites show status "Unavailable"
-Potential root cause: HomeAssistant has been restarted or the WiCAN integration reloaded while the WiCAN device was not available (e.g. car away, sleep mode).
+Notify when the battery voltage drops (possible parasitic drain):
 
-To fix the issue, make sure, the WiCAN device is available (e.g. by turning on ignition of car) and then reload the integration.
+```yaml
+automation:
+  - alias: "WiCAN low battery voltage"
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.wican_battery_voltage
+        below: 12.2
+        for: "00:10:00"
+    actions:
+      - action: notify.mobile_app_your_phone
+        data:
+          title: "Vehicle battery low"
+          message: "Battery voltage is {{ states('sensor.wican_battery_voltage') }} V"
+```
 
-### Device entities are not properly updated anymore after changing the car configuration on the WiCAN device
-Potential root cause: The WiCAN integration creates entities based on the car configuration in HomeAssistant. By changing the car configuration, some PIDs might get added and others removed.
+Announce when the vehicle arrives home (GPS device tracker enters the Home zone):
 
-To ensure, that all entities in HomeAssistant are up to date after changing the car configuration, you can either
-* delete inidividual entities, that are not available in the new car configuration OR
-* delete the WiCAN device in HomeAssistant and afterwards add it again with the new car configuration.
+```yaml
+automation:
+  - alias: "WiCAN arrived home"
+    triggers:
+      - trigger: zone
+        entity_id: device_tracker.wican_location
+        zone: zone.home
+        event: enter
+    actions:
+      - action: notify.family
+        data:
+          message: "The car just arrived home."
+```
 
-### The Unit of measure of a device entity cannot be changed in HomeAssistant
-Background: The WiCAN HomeAssistant integration creates entities based on the WiCAN car configuration.
+## Known limitations
 
-To change the unit of measure of an entity in HomeAssistant, it needs to be updated in the WiCAN device itself:
-* Open the WiCAN device in a web-browser (e.g. via link "VISIT" from the WiCAN device page in HomeAssistant)
-* Go to tab "Automate", find the respective PID, update the "unit" and press "Submit changes". Further details about the car configuration are part of the official WiCAN device documentation: [Automate](https://meatpihq.github.io/wican-fw/config/automate/usage)
-* After changing the unit on the WiCAN device, go to HomeAssistant and reload the WiCAN integration. This will automatically update the unit of measure for the respective entity.
+- **Dynamic PID sensor names** are taken from the raw OBD-II keys the device
+  sends and therefore cannot be pre-translated. Rename them in Home Assistant if
+  you prefer friendlier names.
+- **Units are defined on the device.** To change a PID's unit of measurement,
+  update it on the WiCAN device (Automate tab) and reload the integration; it
+  cannot be changed from Home Assistant alone.
+- **One device per config entry.** Each WiCAN adapter is added separately.
+- **Webhook reachability is required.** The device must be able to reach Home
+  Assistant's webhook URL; if it cannot, entities will not update and a repair
+  issue is raised.
+- Changing the vehicle/PID configuration on the device may add or remove PIDs;
+  stale entities can be removed manually (see Troubleshooting).
+
+## Troubleshooting
+
+### Cannot add a device via IP address or mDNS/hostname
+The WiCAN device might not be reachable, or its protocol is not set to AutoPID.
+1. Confirm the device is reachable from your web browser. If not, make sure it is
+   not in sleep mode ([Sleep Mode docs](https://meatpihq.github.io/wican-fw/config/sleep-mode)).
+2. Confirm the device protocol is set to **AutoPID** in its settings.
+
+### The device is added, but all entities show "Unavailable"
+Home Assistant was restarted or the integration reloaded while the device was
+unavailable (car away, sleep mode). Make the device available again (e.g. turn on
+the ignition) and reload the integration.
+
+### Firmware update fails
+1. Confirm Home Assistant can reach the device on the local network.
+2. Ensure the device is awake and not mid-update.
+3. Retry from the Firmware update entity; check the logs for the specific error.
+
+### Entities are not updated after changing the car configuration on the device
+The integration creates entities from the device's PID configuration. After
+changing it, either:
+- delete the individual entities that no longer exist, or
+- delete the WiCAN device in Home Assistant and add it again.
+
+### The unit of measurement of an entity cannot be changed in Home Assistant
+Units come from the device configuration. Open the device in a browser (e.g. via
+the *Visit* link on the device page), go to the **Automate** tab, update the PID
+`unit`, and press *Submit changes* (see the device
+[Automate docs](https://meatpihq.github.io/wican-fw/config/automate/usage)). Then
+reload the integration in Home Assistant.
+
+## Removing the integration
+
+This integration follows standard Home Assistant removal:
+
+1. Go to *Settings → Devices & Services*.
+2. Select the **WiCAN** integration, open the device's menu, and choose
+   **Delete**.
+3. Repeat for any additional WiCAN devices.
+
+Removing the config entry unregisters the Home Assistant webhook and removes all
+entities. Optionally, open the WiCAN device's web UI and disable its webhook
+(Settings → Services → Automation → Webhooks) so it stops sending data.
