@@ -93,7 +93,11 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
             identifiers={(DOMAIN, device_id)},
             manufacturer="MeatPi",
             model=info.get("hw_version", "Unknown"),
-            name="WiCAN Device",
+            # Match the device name used by every other WiCAN entity so the
+            # tracker shares their device. Existing installs keep their
+            # already-registered entity_id (HA pins it at creation); only new
+            # installs pick up the consistent, title-based entity_id.
+            name=self.config_entry.title,
             sw_version=info.get("fw_version", "Unknown"),
             configuration_url=config_url,
         )

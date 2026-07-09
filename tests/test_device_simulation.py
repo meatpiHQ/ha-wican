@@ -263,7 +263,7 @@ async def test_partial_gps_only(device: WiCANDeviceSimulator) -> None:
     """A GPS-only push makes the tracker available."""
     await device.async_setup()
     await device.push_and_settle(device.gps(51.5, -0.12, accuracy=5))
-    state = device.hass.states.get("device_tracker.wican_device_location")
+    state = device.hass.states.get("device_tracker.wican_sim_location")
     assert state is not None
     assert state.attributes["latitude"] == 51.5
 
@@ -272,7 +272,7 @@ async def test_gps_out_of_range_is_ignored(device: WiCANDeviceSimulator) -> None
     """Out-of-range GPS coordinates leave the tracker unavailable."""
     await device.async_setup()
     await device.push_and_settle(device.gps(999.0, 999.0))
-    state = device.hass.states.get("device_tracker.wican_device_location")
+    state = device.hass.states.get("device_tracker.wican_sim_location")
     assert state is not None
     assert state.state == "unavailable"
 
@@ -557,6 +557,72 @@ async def test_unload_is_clean(device: WiCANDeviceSimulator) -> None:
     # The webhook is unregistered: a push now no longer reaches a handler.
     resp = await device.push(device.status())
     assert resp.status in (HTTPStatus.OK, HTTPStatus.NOT_FOUND, HTTPStatus.METHOD_NOT_ALLOWED)
+
+
+async def test_existing_tracker_entity_id_is_preserved(
+    hass: HomeAssistant, hass_client: Any,
+) -> None:
+    """Migration safety: an existing install keeps its tracker entity_id.
+
+    Older releases named the tracker's device "WiCAN Device", so existing users
+    have ``device_tracker.wican_device_location`` in their registry. After the
+    device name change to the entry title, that entity_id must be preserved
+    (HA pins entity_ids at creation) while a *new* install would get the
+    title-based id.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="My Car",  # a real, non-default title
+        data={
+            CONF_WEBHOOK_ID: "wid_mig",
+            "mdns": "http://wican_mig.local",
+            "host": "http://192.168.1.9",
+            "mac": "CC:CC:CC:CC:CC:CC",
+            "device_id": "mig_dev",
+        },
+        options={CONF_POST_INTERVAL: 15},
+        unique_id="cccccccccccc",
+    )
+    entry.add_to_hass(hass)
+
+    # Simulate the entity already registered by an older version (legacy id).
+    reg = er.async_get(hass)
+    reg.async_get_or_create(
+        "device_tracker",
+        DOMAIN,
+        f"{entry.entry_id}_device_tracker",
+        suggested_object_id="wican_device_location",
+        config_entry=entry,
+    )
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The tracker reuses the legacy entity_id, NOT device_tracker.my_car_location.
+    resolved = reg.async_get_entity_id(
+        "device_tracker", DOMAIN, f"{entry.entry_id}_device_tracker",
+    )
+    assert resolved == "device_tracker.wican_device_location"
+    assert hass.states.get("device_tracker.my_car_location") is None
+
+
+async def test_new_tracker_entity_id_follows_title(
+    hass: HomeAssistant, hass_client: Any,
+) -> None:
+    """A fresh install gets the consistent, title-based tracker entity_id."""
+    dev = WiCANDeviceSimulator(
+        hass, hass_client, title="My Car", webhook_id="wid_new",
+        device_id="new_dev", mac="DD:DD:DD:DD:DD:DD", hostname="wican_new.local",
+    )
+    await dev.async_setup()
+    # New registry entry -> id derived from the "My Car" device name.
+    assert hass.states.get("device_tracker.my_car_location") is not None
 
 
 async def test_multi_device_isolation(hass: HomeAssistant, hass_client: Any) -> None:
