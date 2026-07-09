@@ -580,6 +580,43 @@ async def test_string_ip_none(
     assert result is None
 
 
+async def test_format_http_url_none_input(hass: HomeAssistant) -> None:
+    """_format_http_url returns None for a None address."""
+    from custom_components.wican.config_flow import _format_http_url
+
+    assert _format_http_url(None, 80) is None
+
+
+async def test_format_http_url_invalid_host(hass: HomeAssistant) -> None:
+    """_format_http_url returns None when URL.build rejects the host."""
+    from custom_components.wican.config_flow import _format_http_url
+
+    # A space in the host makes yarl raise ValueError -> None.
+    assert _format_http_url("a b", 80) is None
+
+
+async def test_zeroconf_no_host_aborts(hass: HomeAssistant) -> None:
+    """Zeroconf discovery with no host and no IP aborts with no_host."""
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="",
+        ip_addresses=[],
+        hostname="",
+        name="WiCAN-WebServer",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "no_host"
+
+
 async def test_user_flow_duplicate_aborts(
     hass: HomeAssistant,
     mock_aiohttp_session,

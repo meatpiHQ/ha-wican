@@ -16,8 +16,8 @@ rules:
     status: done
     comment: Coordinator in coordinator.py, base entity in entity.py, models.py.
   config-flow-test-coverage:
-    status: todo
-    comment: config_flow.py at 96%; needs 100% line coverage.
+    status: done
+    comment: config_flow.py at 100% line coverage.
   config-flow:
     status: done
     comment: >
