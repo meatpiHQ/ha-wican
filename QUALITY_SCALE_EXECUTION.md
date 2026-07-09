@@ -225,12 +225,22 @@ Restructure `README.md` (and link supporting docs) to cover:
 | 1.8 | `async_step_reconfigure` | `reconfiguration-flow` done |
 | 1.2 | `data_description` + reconfigure strings | `config-flow` done |
 | 1.7 | `_pid_enabled_by_default` for HV_C_V/D_### | `entity-disabled-by-default` done |
+| docs | Move scratch `.md` to gitignored `notes/`; track quality docs | Convention set |
+| 1.6 | `icons.json` for static sensor/binary_sensor; device_tracker translation_key | `icon-translations` done |
+| 1.5 | Coordinator last-push tracking → `UpdateFailed` when stale | `entity-unavailable` + `log-when-unavailable` done |
+
+### Rules closed this pass (code)
+Bronze: config-flow, unique-config-entry.
+Silver: parallel-updates, entity-unavailable, log-when-unavailable.
+Gold: discovery-update-info, reconfiguration-flow, entity-disabled-by-default,
+icon-translations.
+Plus scaffold (quality_scale.yaml, manifest key) and a stale-test fix.
 
 ### Still open (next up)
-- 1.6 `icons.json` icon translations (`icon-translations`)
-- 1.5 staleness availability + log-once (`entity-unavailable`, `log-when-unavailable`)
 - 1.9 repair issues on webhook failure (`repair-issues`)
 - 1.3 `ConfigEntryNotReady` on transient setup (`test-before-setup`)
 - 1.11 exception-translation audit (`exception-translations`)
+- `entity-translations` — document dynamic-PID limitation
 - Phase 2 coverage >95% incl. config_flow 100%
-- Phase 3 docs; Phase 4 brands PR
+- Phase 3 docs (`docs-*`); Phase 4 brands PR
+- Finalize: bump manifest `quality_scale` and flip yaml rules to done
