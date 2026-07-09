@@ -184,13 +184,27 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             await asyncio.sleep(FIRMWARE_UPDATE_REBOOT_DELAY)
             await self.coordinator.async_request_refresh()
 
-        except (
-            FirmwareDownloadError,
-            FirmwareUploadError,
-            FirmwareVersionNotFoundError,
-        ) as err:
+        except FirmwareVersionNotFoundError as err:
             _LOGGER.exception("Firmware update failed")
-            raise HomeAssistantError(str(err)) from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="version_not_found",
+                translation_placeholders={"version": str(target_version or "")},
+            ) from err
+        except FirmwareDownloadError as err:
+            _LOGGER.exception("Firmware update failed")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="firmware_download_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        except FirmwareUploadError as err:
+            _LOGGER.exception("Firmware update failed")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="firmware_upload_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         finally:
             self._update_in_progress = False
             self._attr_in_progress = False

@@ -87,6 +87,18 @@
       }
     },
     "exceptions": {
+      "device_mismatch": {
+        "message": "Device ID mismatch. Expected {expected}, got {actual}. The device may have been replaced or the configuration points to a different device."
+      },
+      "connection_error": {
+        "message": "Failed to communicate with the WiCAN device: {error}"
+      },
+      "wican_error": {
+        "message": "WiCAN error: {error}"
+      },
+      "no_firmware_version": {
+        "message": "No firmware version is available to install."
+      },
       "firmware_download_failed": {
         "message": "Failed to download firmware from GitHub: {error}"
       },

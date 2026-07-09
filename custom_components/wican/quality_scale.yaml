@@ -57,8 +57,13 @@ rules:
       Device pushes to Home Assistant; there is no device connection to
       validate at config time.
   test-before-setup:
-    status: todo
-    comment: Raise ConfigEntryNotReady on genuine transient setup failures.
+    status: exempt
+    comment: >
+      Local push integration: the device initiates contact by POSTing to a
+      Home Assistant webhook, so there is no device connection to validate at
+      setup time. Setup only wires up local webhook handling (which cannot
+      fail transiently); an unreachable device is surfaced later via the
+      repair issue raised by webhook registration.
   unique-config-entry:
     status: done
     comment: Zeroconf uses MAC/device_id; manual flow dedupes on the address.
@@ -134,13 +139,19 @@ rules:
     status: done
     comment: Per-cell HV voltage/deterioration PID sensors default to disabled.
   entity-translations:
-    status: todo
+    status: done
     comment: >
-      Static entities translated; dynamic PID sensors use raw device keys
-      (documented limitation).
+      All static entities (sensor, binary_sensor, device_tracker, update) use
+      translation_key with translated names. Dynamic PID sensors are named
+      from device-provided OBD-II keys that are unknown ahead of time and
+      therefore cannot be pre-translated (documented limitation).
   exception-translations:
-    status: todo
-    comment: Audit all raised errors for translation keys.
+    status: done
+    comment: >
+      All user-facing raised HomeAssistantError/ConfigEntryError use
+      translation_domain + translation_key with matching entries under
+      exceptions (device_mismatch, connection_error, wican_error, firmware
+      download/upload/version, update_in_progress, device_unreachable).
   icon-translations:
     status: done
     comment: >
