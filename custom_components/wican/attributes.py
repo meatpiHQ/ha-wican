@@ -74,9 +74,11 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
 )
 
 def get_sensor_attributes(entity_description: Any, data: dict[str, Any]) -> dict[str, Any]:
-    status = data.get("status", {})
+    status = data.get("status", {}) if isinstance(data, dict) else {}
+    if not isinstance(status, dict):
+        return {}
     attrs = {}
-    for attr_key in getattr(entity_description, "extra_attributes", []):
+    for attr_key in getattr(entity_description, "extra_attributes", None) or []:
         if status.get(attr_key) is not None:
             attrs[attr_key] = status[attr_key]
     return attrs

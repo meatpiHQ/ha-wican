@@ -92,7 +92,9 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
     def installed_version(self) -> str | None:
         """Return the installed firmware version."""
         # Get from coordinator data (from webhook status)
-        fw_version = self.coordinator.data.get("status", {}).get("fw_version")
+        data = self.coordinator.data or {}
+        status = data.get("status", {})
+        fw_version = status.get("fw_version") if isinstance(status, dict) else None
         if not fw_version:
             # Fallback to config entry data
             fw_version = self.config_entry.data.get("fw_version")

@@ -173,9 +173,13 @@ async def async_setup_entry(  # noqa: C901
     # Restore PID sensors from config entry
     pid_keys = config_entry.data.get("pid_keys", [])
     pid_config = config_entry.data.get("config", {})
+    if not isinstance(pid_config, dict):
+        pid_config = {}
     restored_entities: list[WiCANPidSensorEntity] = []
     for pid_key in pid_keys:
         config = pid_config.get(pid_key, {})
+        if not isinstance(config, dict):
+            config = {}
         # Use _get_pid_unit with config unit for consistent fallback handling
         unit = _get_pid_unit(pid_key, config.get("unit"))
         device_class = _normalize_device_class(config.get("class"), unit, pid_key)
@@ -203,17 +207,23 @@ async def async_setup_entry(  # noqa: C901
         async_add_entities(restored_entities)
 
     async def _async_process_pid_update(data: dict[str, Any]) -> None:
+        if not isinstance(data, dict):
+            return
         pid_data = data.get("autopid_data", {})
-        if not pid_data:
+        if not isinstance(pid_data, dict) or not pid_data:
             return
 
         pid_config = data.get("config", {})
+        if not isinstance(pid_config, dict):
+            pid_config = {}
         new_entities: list[WiCANPidSensorEntity] = []
         sensors = DYNAMIC_PID_SENSORS[config_entry.entry_id]
 
         for pid_key in pid_data:
             if pid_key not in sensors:
                 config = pid_config.get(pid_key, {})
+                if not isinstance(config, dict):
+                    config = {}
                 # Use _get_pid_unit with config unit for consistent fallback handling
                 unit = _get_pid_unit(pid_key, config.get("unit"))
                 device_class = _normalize_device_class(config.get("class"), unit, pid_key)
@@ -283,7 +293,10 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         key = self.entity_description.key
-        status = self.coordinator.data.get("status", {})
+        data = self.coordinator.data or {}
+        status = data.get("status", {})
+        if not isinstance(status, dict):
+            return
 
         if key not in status:
             return
@@ -345,7 +358,10 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        pid_data = self.coordinator.data.get("autopid_data", {})
+        data = self.coordinator.data or {}
+        pid_data = data.get("autopid_data", {})
+        if not isinstance(pid_data, dict):
+            return
 
         if self._pid_key in pid_data:
             raw_value = pid_data[self._pid_key]

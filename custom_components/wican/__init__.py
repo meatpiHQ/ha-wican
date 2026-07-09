@@ -310,10 +310,45 @@ async def async_setup_entry(  # noqa: C901, PLR0915
             return Response(
                 text=error.error_message, status=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
+        except (ValueError, UnicodeDecodeError):
+            # Body was not valid JSON (json.JSONDecodeError is a ValueError).
+            _LOGGER.warning("Received WiCAN webhook with an invalid JSON body")
+            return Response(
+                text="Invalid JSON body",
+                status=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
+
+        # WiCAN always sends a JSON object. Reject anything else defensively so a
+        # malformed device (or unrelated caller) cannot crash the handler.
+        if not isinstance(data, dict):
+            _LOGGER.warning(
+                "Received WiCAN webhook with non-object JSON payload (%s)",
+                type(data).__name__,
+            )
+            return Response(
+                text="Expected a JSON object",
+                status=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
+
+        # Validate identity and apply data BEFORE persisting any device-reported
+        # connection info. Otherwise an impostor's device_id would be written to
+        # the config entry first and the identity check would pass against it.
+        try:
+            coordinator.handle_webhook_data(data)
+        except ConfigEntryError:
+            _LOGGER.exception(
+                "Rejecting webhook due to device identity validation failure",
+            )
+            return Response(
+                text="Device identity mismatch",
+                status=HTTPStatus.FORBIDDEN,
+            )
 
         # Extract device info fields from top-level or nested "status"
         device_info_fields = {}
-        status = data.get("status", {})
+        status = data.get("status")
+        if not isinstance(status, dict):
+            status = {}
         for key in ("fw_version", "hw_version", "device_id", "git_version", "mdns", "host", "ip"):
             # Check top-level first, then status
             if key in status:
@@ -362,17 +397,6 @@ async def async_setup_entry(  # noqa: C901, PLR0915
                     hass.async_create_task(
                         _async_register_webhook_on_device(hass, entry),
                     )
-
-        # Update coordinator with new data
-        try:
-            coordinator.handle_webhook_data(data)
-        except ConfigEntryError:
-            # Device identity mismatch - log error and reject webhook
-            _LOGGER.exception("Rejecting webhook due to device identity validation failure")
-            return Response(
-                text="Device identity mismatch",
-                status=HTTPStatus.FORBIDDEN,
-            )
 
         # Keep dispatcher for backward compatibility during migration
         async_dispatcher_send(hass, DOMAIN, webhook_id, data)

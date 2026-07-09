@@ -102,6 +102,14 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This is called by the webhook handler when new data arrives.
         It updates the coordinator's data and notifies all listeners.
         """
+        # Defensive: ignore malformed (non-object) payloads instead of raising,
+        # so a misbehaving device cannot break state updates for others.
+        if not isinstance(data, dict):
+            _LOGGER.warning(
+                "Ignoring non-object WiCAN webhook data (%s)", type(data).__name__,
+            )
+            return
+
         # Validate device identity before processing data
         self._validate_device_identity(data)
 
@@ -127,6 +135,8 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Extract device_id from webhook data (can be in status dict or top-level)
         status = data.get("status", {})
+        if not isinstance(status, dict):
+            status = {}
         incoming_device_id = status.get("device_id") or data.get("device_id")
 
         if not incoming_device_id:
@@ -178,6 +188,13 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             Normalized value suitable for Home Assistant
         """
         if raw_value is None:
+            return None
+
+        # A sensor state must be a scalar. Reject nested structures defensively
+        # so a malformed device cannot push a dict/list into an entity state
+        # (which Home Assistant would reject at state-write time).
+        if isinstance(raw_value, (dict, list)):
+            _LOGGER.debug("Ignoring non-scalar value for %s: %r", key, raw_value)
             return None
 
         # Battery voltage: strip "V" / " V" suffix (any case) and convert to float

@@ -61,12 +61,17 @@ class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         key = self.entity_description.key
-        status = self.coordinator.data.get("status", {})
+        data = self.coordinator.data or {}
+        status = data.get("status", {})
+        if not isinstance(status, dict):
+            status = {}
 
         # If key not present, don't change state. Availability handled below.
         if key in status:
             self._attr_is_on = is_true_status(status[key])
-            self._attr_extra_state_attributes = get_sensor_attributes(key, self.coordinator.data)
+            self._attr_extra_state_attributes = get_sensor_attributes(
+                self.entity_description, data,
+            )
 
         # Availability: if we have a status dict, entity is available; if device stopped pushing,
         # HA will keep last state, but we still emit state writes on updates to ensure logbook records.

@@ -161,10 +161,11 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        gps_data = self.coordinator.data.get("gps", {})
+        data = self.coordinator.data or {}
+        gps_data = data.get("gps", {})
 
-        if not gps_data:
-            # No GPS data available
+        if not isinstance(gps_data, dict) or not gps_data:
+            # No usable GPS data available
             _LOGGER.debug("No GPS data in coordinator update")
             return
 
