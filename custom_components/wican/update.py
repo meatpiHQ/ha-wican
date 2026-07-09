@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import aiohttp
 from homeassistant.components.update import (
@@ -135,12 +135,12 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         """Return the release notes summary."""
         if not self._github_coordinator.data:
             return None
-        body = self._github_coordinator.data.get("body", "")
+        body = str(self._github_coordinator.data.get("body", ""))
         # Truncate to first 500 chars
         return body[:500] + "..." if len(body) > 500 else body
 
     async def async_install(
-        self, version: str | None, _backup: bool, **_kwargs: Any,
+        self, version: str | None, backup: bool, **kwargs: Any,
     ) -> None:
         """Install firmware update."""
         if self._update_in_progress:
@@ -165,19 +165,19 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             _LOGGER.info("Starting firmware update to version %s", target_version)
 
             # Step 1: Download firmware from GitHub (50% of progress)
-            self._attr_in_progress = 50
+            self._attr_update_percentage = 50
             self.async_write_ha_state()
             firmware_data, firmware_filename = await self._download_firmware(target_version)
 
             # Step 2: Upload firmware to device (50% to 100%)
-            self._attr_in_progress = 75
+            self._attr_update_percentage = 75
             self.async_write_ha_state()
             await self._upload_firmware_to_device(firmware_data, firmware_filename)
 
             _LOGGER.info("Firmware update initiated successfully")
 
             # Update complete - device will reboot
-            self._attr_in_progress = 100
+            self._attr_update_percentage = 100
             self.async_write_ha_state()
 
             # Wait for device to start updating, then refresh
@@ -208,6 +208,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         finally:
             self._update_in_progress = False
             self._attr_in_progress = False
+            self._attr_update_percentage = None
             self.async_write_ha_state()
 
     async def _fetch_github_release(self, version: str) -> dict[str, Any]:
@@ -264,7 +265,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                         tag_name,
                         version,
                     )
-                    return release
+                    return cast("dict[str, Any]", release)
 
             raise FirmwareVersionNotFoundError(
                 f"Version {version} not found in GitHub releases for this device type",

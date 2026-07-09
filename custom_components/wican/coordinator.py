@@ -36,6 +36,8 @@ UPDATE_INTERVAL = timedelta(seconds=WICAN_DATA_UPDATE_INTERVAL)
 class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching WiCAN data."""
 
+    config_entry: WiCANConfigEntry
+
     def __init__(
         self,
         hass: HomeAssistant,

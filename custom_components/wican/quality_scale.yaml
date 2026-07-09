@@ -192,5 +192,7 @@ rules:
     status: done
     comment: Uses async_get_clientsession(hass).
   strict-typing:
-    status: todo
-    comment: Some function signatures still lack annotations.
+    status: done
+    comment: >
+      mypy --strict passes with 0 errors across all modules (see
+      [tool.mypy] in pyproject.toml). WiCANConfigEntry is used throughout.

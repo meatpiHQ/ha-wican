@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import wraps
 import logging
-from typing import TYPE_CHECKING, Any, Concatenate, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate
 
 from homeassistant.components import webhook
 from homeassistant.exceptions import HomeAssistantError
@@ -22,9 +22,6 @@ if TYPE_CHECKING:
     from .entity import WiCANEntity
 
 _LOGGER = logging.getLogger(__name__)
-
-_WiCANEntityT = TypeVar("_WiCANEntityT", bound="WiCANEntity")
-_P = TypeVar("_P")
 
 
 def build_webhook_url(base_url: str, webhook_id: str) -> str:
@@ -192,8 +189,8 @@ def resolve_webhook_url(
 
 
 def wican_exception_handler[WiCANEntityT: "WiCANEntity"](
-    func: Callable[Concatenate[_WiCANEntityT, ...], Coroutine[Any, Any, Any]],
-) -> Callable[Concatenate[_WiCANEntityT, ...], Coroutine[Any, Any, None]]:
+    func: Callable[Concatenate[WiCANEntityT, ...], Coroutine[Any, Any, Any]],
+) -> Callable[Concatenate[WiCANEntityT, ...], Coroutine[Any, Any, None]]:
     """Decorate WiCAN calls to handle exceptions consistently.
 
     This decorator provides centralized error handling for entity methods,
@@ -207,7 +204,7 @@ def wican_exception_handler[WiCANEntityT: "WiCANEntity"](
     """
 
     @wraps(func)
-    async def handler(self: _WiCANEntityT, *args: Any, **kwargs: Any) -> None:
+    async def handler(self: WiCANEntityT, *args: Any, **kwargs: Any) -> None:
         """Handle exceptions from WiCAN operations."""
         try:
             await func(self, *args, **kwargs)

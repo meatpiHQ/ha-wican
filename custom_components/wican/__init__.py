@@ -152,7 +152,10 @@ def _build_webhook_endpoint(base: str | None) -> URL | None:
 
     if not url.scheme:
         try:
-            url = URL(_ensure_http_scheme(candidate))
+            schemed_candidate = _ensure_http_scheme(candidate)
+            if schemed_candidate is None:
+                return None
+            url = URL(schemed_candidate)
         except ValueError:
             return None
 

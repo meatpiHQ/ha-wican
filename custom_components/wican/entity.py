@@ -83,22 +83,22 @@ class WiCANEntity(CoordinatorEntity[WiCANDataUpdateCoordinator]):
         device_id = info.get("device_id") or self.config_entry.entry_id
 
         # Build device info with MAC connection if available
-        device_info_dict = {
-            "identifiers": {(DOMAIN, device_id)},
-            "manufacturer": "MeatPi",
-            "model": info.get("hw_version", "Unknown"),
-            "name": self.config_entry.title,
-            "sw_version": info.get("fw_version", "Unknown"),
-            "configuration_url": config_url,
-        }
+        device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            manufacturer="MeatPi",
+            model=info.get("hw_version", "Unknown"),
+            name=self.config_entry.title,
+            sw_version=info.get("fw_version", "Unknown"),
+            configuration_url=config_url,
+        )
 
         # Add MAC address connection if available (from firmware)
         mac_address = info.get("mac")
         if mac_address:
-            device_info_dict["connections"] = {(CONNECTION_NETWORK_MAC, mac_address)}
+            device_info["connections"] = {(CONNECTION_NETWORK_MAC, mac_address)}
 
         # Add serial number if device_id available
         if info.get("device_id"):
-            device_info_dict["serial_number"] = info.get("device_id")
+            device_info["serial_number"] = info.get("device_id")
 
-        return DeviceInfo(**device_info_dict)
+        return device_info

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
@@ -48,11 +48,15 @@ class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):
 
     entity_description: WiCANBinarySensorEntityDescription
 
-    def __init__(self, config_entry, entity_description):
+    def __init__(
+        self,
+        config_entry: WiCANConfigEntry,
+        entity_description: WiCANBinarySensorEntityDescription,
+    ) -> None:
         super().__init__(config_entry, entity_description)
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
         self._attr_is_on = None
-        self._attr_extra_state_attributes = None
+        self._attr_extra_state_attributes = {}
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -70,7 +74,7 @@ class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):
         self.async_write_ha_state()
 
     @callback
-    def _async_handle_event(self, webhook_id: str, data) -> None:
+    def _async_handle_event(self, webhook_id: str, data: dict[str, str]) -> None:
         """Handle webhook event (backward compatibility)."""
         # Coordinator update will trigger _handle_coordinator_update()
 

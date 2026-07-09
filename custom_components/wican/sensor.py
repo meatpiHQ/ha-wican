@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
     RestoreSensor,
     SensorDeviceClass,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import EntityCategory
 
 from .attributes import SENSOR_DESCRIPTIONS, WiCANSensorEntityDescription, get_sensor_attributes
 from .const import DOMAIN
@@ -153,7 +153,7 @@ def _pid_enabled_by_default(pid_key: str) -> bool:
     return _HIGH_VOLUME_PID_PATTERN.match(pid_key) is None
 
 
-DYNAMIC_PID_SENSORS = {}
+DYNAMIC_PID_SENSORS: dict[str, dict[str, WiCANPidSensorEntity]] = {}
 
 
 async def async_setup_entry(  # noqa: C901
@@ -173,7 +173,7 @@ async def async_setup_entry(  # noqa: C901
     # Restore PID sensors from config entry
     pid_keys = config_entry.data.get("pid_keys", [])
     pid_config = config_entry.data.get("config", {})
-    restored_entities = []
+    restored_entities: list[WiCANPidSensorEntity] = []
     for pid_key in pid_keys:
         config = pid_config.get(pid_key, {})
         # Use _get_pid_unit with config unit for consistent fallback handling
@@ -202,13 +202,13 @@ async def async_setup_entry(  # noqa: C901
     if restored_entities:
         async_add_entities(restored_entities)
 
-    async def _async_process_pid_update(data):
+    async def _async_process_pid_update(data: dict[str, Any]) -> None:
         pid_data = data.get("autopid_data", {})
         if not pid_data:
             return
 
         pid_config = data.get("config", {})
-        new_entities = []
+        new_entities: list[WiCANPidSensorEntity] = []
         sensors = DYNAMIC_PID_SENSORS[config_entry.entry_id]
 
         for pid_key in pid_data:
@@ -249,7 +249,7 @@ async def async_setup_entry(  # noqa: C901
             hass.config_entries.async_update_entry(config_entry, data=new_data)
             async_add_entities(new_entities)
 
-    def handle_pid_update(webhook_id, data):
+    def handle_pid_update(webhook_id: str, data: dict[str, Any]) -> None:
         # IMPORTANT: multiple WiCAN entries share the same dispatcher signal.
         # Filter by this entry's webhook_id to avoid cross-device entity creation.
         if webhook_id != config_entry.runtime_data.webhook_id:
@@ -271,10 +271,14 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
 
     entity_description: WiCANSensorEntityDescription
 
-    def __init__(self, config_entry, entity_description):
+    def __init__(
+        self,
+        config_entry: WiCANConfigEntry,
+        entity_description: WiCANSensorEntityDescription,
+    ) -> None:
         super().__init__(config_entry, entity_description)
         self._attr_native_value = None
-        self._attr_extra_state_attributes = None
+        self._attr_extra_state_attributes = {}
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -298,7 +302,7 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
         self.async_write_ha_state()
 
     @callback
-    def _async_handle_event(self, webhook_id: str, data) -> None:
+    def _async_handle_event(self, webhook_id: str, data: dict[str, str]) -> None:
         """Handle webhook event (backward compatibility).
 
         This method is kept for backward compatibility during migration.
@@ -324,8 +328,14 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
     __slots__ = ("_attr_native_value", "_pending_value", "_pid_key")
 
     entity_description: WiCANSensorEntityDescription
+    _pending_value: Any
 
-    def __init__(self, config_entry, pid_key, entity_description):
+    def __init__(
+        self,
+        config_entry: WiCANConfigEntry,
+        pid_key: str,
+        entity_description: WiCANSensorEntityDescription,
+    ) -> None:
         _LOGGER.debug("Creating WiCANPidSensorEntity for PID: %s", pid_key)
         super().__init__(config_entry, entity_description)
         self._pid_key = pid_key
@@ -346,7 +356,7 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
             self.async_write_ha_state()
 
     @callback
-    def _async_handle_event(self, webhook_id: str, data) -> None:
+    def _async_handle_event(self, webhook_id: str, data: dict[str, str]) -> None:
         """Handle webhook event (backward compatibility).
 
         Coordinator pattern now handles updates via _handle_coordinator_update().

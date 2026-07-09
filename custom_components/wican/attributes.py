@@ -1,15 +1,16 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntityDescription
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntityDescription
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.const import EntityCategory
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class WiCANBinarySensorEntityDescription(BinarySensorEntityDescription):
     extra_attributes: list[str] | None = field(default_factory=list)
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class WiCANSensorEntityDescription(SensorEntityDescription):
     extra_attributes: list[str] | None = field(default_factory=list)
 
@@ -72,7 +73,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
     ),
 )
 
-def get_sensor_attributes(entity_description, data: dict) -> dict:
+def get_sensor_attributes(entity_description: Any, data: dict[str, Any]) -> dict[str, Any]:
     status = data.get("status", {})
     attrs = {}
     for attr_key in getattr(entity_description, "extra_attributes", []):

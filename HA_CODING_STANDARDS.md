@@ -44,7 +44,7 @@ To reach a tier, **all** rules of that tier **and every lower tier** must pass
 | Bronze | 20 | 16 | 3 | 1 (`brands`, external) |
 | Silver | 10 | 6 | 1 | 0 |
 | Gold | 21 | 18 | 3 | 0 |
-| Platinum | 3 | 2 | 0 | 1 (`strict-typing`) |
+| Platinum | 3 | 3 | 0 | 0 (`mypy --strict` clean) |
 
 > **Status:** Every Bronze/Silver/Gold rule is `done` or `exempt` **except
 > `brands`**, which requires an external PR to `home-assistant/brands` (logo +

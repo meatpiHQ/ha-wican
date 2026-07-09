@@ -17,7 +17,7 @@ import json
 import logging
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, TypedDict, cast
 
 if TYPE_CHECKING:
     from typing import Final
@@ -186,7 +186,7 @@ def _load_params() -> dict[str, ParamDefinition]:
         with params_file.open(encoding="utf-8") as f:
             data = json.load(f)
             _LOGGER.debug("Loaded %d parameters from params.json", len(data))
-            return data
+            return cast("dict[str, ParamDefinition]", data)
     except FileNotFoundError:
         _LOGGER.warning("params.json not found at %s, using empty defaults", params_file)
         return {}
@@ -633,7 +633,7 @@ def get_param_device_class(param_name: str) -> str | None:
     key = _normalize_param_name(param_name)
 
     if key in _PARAMS:
-        device_class = _PARAMS[key].get("settings", {}).get("class", "")
+        device_class = str(_PARAMS[key].get("settings", {}).get("class", "") or "")
         # Return None for empty/none classes
         if device_class and device_class.lower() not in ("", "none"):
             return device_class

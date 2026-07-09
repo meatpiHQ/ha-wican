@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -106,4 +106,4 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (ValueError, KeyError) as err:
             raise UpdateFailed(f"Invalid response from GitHub: {err}") from err
         else:
-            return latest
+            return cast("dict[str, Any]", latest)
