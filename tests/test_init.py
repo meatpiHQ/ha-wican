@@ -437,3 +437,89 @@ async def test_webhook_registration_https_local_falls_back_to_http_stored_url(
 
 
 
+
+
+def test_parse_version_variants() -> None:
+    """_parse_version handles empty, non-numeric, and normal versions."""
+    from custom_components.wican import _parse_version
+
+    assert _parse_version(None) is None
+    assert _parse_version("") is None
+    assert _parse_version("no-digits-here") is None
+    assert _parse_version("v4.49") == (4, 49)
+
+
+def test_is_version_at_least() -> None:
+    """_is_version_at_least compares padded version tuples."""
+    from custom_components.wican import _is_version_at_least
+
+    assert _is_version_at_least(None, (4, 49)) is False
+    assert _is_version_at_least("v4.49", (4, 49)) is True
+    assert _is_version_at_least("v4.50", (4, 49)) is True
+    assert _is_version_at_least("v4.48", (4, 49)) is False
+
+
+def test_supports_dual_webhook_urls() -> None:
+    """_supports_dual_webhook_urls requires a Pro device on new-enough firmware."""
+    from custom_components.wican import _supports_dual_webhook_urls
+
+    non_pro = MockConfigEntry(domain=DOMAIN, data={"hw_version": "v3.1"})
+    assert _supports_dual_webhook_urls(non_pro) is False
+
+    pro_old = MockConfigEntry(
+        domain=DOMAIN, data={"hw_version": "WiCAN-Pro", "fw_version": "v4.00"},
+    )
+    assert _supports_dual_webhook_urls(pro_old) is False
+
+    pro_new = MockConfigEntry(
+        domain=DOMAIN, data={"hw_version": "WiCAN-Pro", "fw_version": "v4.49"},
+    )
+    assert _supports_dual_webhook_urls(pro_new) is True
+
+
+async def test_setup_updates_params_from_github(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_aiohttp_session,
+) -> None:
+    """Setup logs when params.json is refreshed from GitHub (line 233)."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican.async_update_params_from_github",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+    ):
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_setup_params_update_failure_is_non_fatal(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_aiohttp_session,
+) -> None:
+    """A GitHub params update error does not block setup (lines 234-235)."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican.async_update_params_from_github",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ),
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+    ):
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
