@@ -356,6 +356,69 @@ class TestPidAliasNormalization:
             unit = get_param_unit(variant)
             assert unit == "%", f"{variant} should have unit %, got {unit}"
 
+    def test_normalize_hex_prefix_with_alias_suffix(self) -> None:
+        """A hex prefix + aliased suffix that is not itself a full alias."""
+        from custom_components.wican.param_loader import _normalize_param_name
+
+        # "0f-rpm" is not a full alias, but suffix "rpm" is -> ENGINE_RPM.
+        assert _normalize_param_name("0F-rpm") == "ENGINE_RPM"
+
+    def test_normalize_hex_prefix_with_camelcase_suffix(self) -> None:
+        """A hex prefix + CamelCase suffix that converts to a known param."""
+        from custom_components.wican.param_loader import _normalize_param_name
+
+        assert _normalize_param_name("0F-CoolantTmp") == "COOLANT_TMP"
+
+    def test_normalize_camelcase_without_prefix(self) -> None:
+        """CamelCase without a hex prefix converts to UPPER_SNAKE_CASE."""
+        from custom_components.wican.param_loader import _normalize_param_name
+
+        assert _normalize_param_name("CoolantTmp") == "COOLANT_TMP"
+
+    def test_normalize_unknown_falls_back_to_upper(self) -> None:
+        """An unmatched name falls back to its uppercase form."""
+        from custom_components.wican.param_loader import _normalize_param_name
+
+        assert _normalize_param_name("zz-unknown") == "ZZ-UNKNOWN"
+
+
+class TestParamFileLoading:
+    """Tests for params.json loading and hashing error paths."""
+
+    def test_load_params_missing_file(self, tmp_path) -> None:
+        """A missing params.json yields an empty dict."""
+        from unittest.mock import patch
+
+        from custom_components.wican import param_loader as pl
+
+        with patch.object(
+            pl, "_get_params_file_path", return_value=tmp_path / "missing.json",
+        ):
+            assert pl._load_params() == {}
+
+    def test_load_params_invalid_json(self, tmp_path) -> None:
+        """Malformed params.json yields an empty dict."""
+        from unittest.mock import patch
+
+        from custom_components.wican import param_loader as pl
+
+        bad = tmp_path / "params.json"
+        bad.write_text("{not valid json", encoding="utf-8")
+        with patch.object(pl, "_get_params_file_path", return_value=bad):
+            assert pl._load_params() == {}
+
+    @pytest.mark.asyncio
+    async def test_current_params_hash_missing_file(self, tmp_path) -> None:
+        """Hashing a missing file returns None."""
+        from unittest.mock import patch
+
+        from custom_components.wican import param_loader as pl
+
+        with patch.object(
+            pl, "_get_params_file_path", return_value=tmp_path / "missing.json",
+        ):
+            assert await pl._async_get_current_params_hash() is None
+
 
 class TestGitHubParamsUpdate:
     """Tests for GitHub params.json update functionality."""
