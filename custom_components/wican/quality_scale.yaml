@@ -98,8 +98,8 @@ rules:
     status: exempt
     comment: Device has no authentication.
   test-coverage:
-    status: todo
-    comment: 91.5% overall; must exceed 95%.
+    status: done
+    comment: 95.4%+ overall (config_flow.py at 100%).
 
   # Gold
   devices:
