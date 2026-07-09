@@ -39,15 +39,22 @@ exemption below must be recorded in `quality_scale.yaml` with a justification.
 To reach a tier, **all** rules of that tier **and every lower tier** must pass
 (a rule may pass by being `done` or `exempt`).
 
-| Tier | Rules | Done | Partial | Missing | Exempt |
-|---|---|---|---|---|---|
-| Bronze | 20 | 11 | 5 | 1 | 3 |
-| Silver | 10 | 3 | 4 | 2 | 1 |
-| Gold | 21 | 6 | 4 | 10 | 1 |
-| Platinum | 3 | 2 | 1 | 0 | 0 |
+| Tier | Rules | Done | Exempt | Remaining |
+|---|---|---|---|---|
+| Bronze | 20 | 16 | 3 | 1 (`brands`, external) |
+| Silver | 10 | 6 | 1 | 0 |
+| Gold | 21 | 18 | 3 | 0 |
+| Platinum | 3 | 2 | 0 | 1 (`strict-typing`) |
 
-> Reaching Gold requires closing **all** Bronze + Silver + Gold gaps below.
-> Platinum is out of scope but tracked for completeness.
+> **Status:** Every Bronze/Silver/Gold rule is `done` or `exempt` **except
+> `brands`**, which requires an external PR to `home-assistant/brands` (logo +
+> icon). Once that merges, the integration meets Gold. Test coverage is **95.8 %**
+> overall (config_flow.py and param_loader.py at 100 %); full suite 332 passing.
+> Platinum `strict-typing` is out of scope but tracked.
+
+The detailed per-rule status of record lives in
+[`custom_components/wican/quality_scale.yaml`](custom_components/wican/quality_scale.yaml);
+the table below reflects the pre-work assessment and remains as a reference.
 
 ---
 

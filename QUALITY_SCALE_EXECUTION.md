@@ -236,11 +236,18 @@ Gold: discovery-update-info, reconfiguration-flow, entity-disabled-by-default,
 icon-translations.
 Plus scaffold (quality_scale.yaml, manifest key) and a stale-test fix.
 
-### Still open (next up)
-- 1.9 repair issues on webhook failure (`repair-issues`)
-- 1.3 `ConfigEntryNotReady` on transient setup (`test-before-setup`)
-- 1.11 exception-translation audit (`exception-translations`)
-- `entity-translations` — document dynamic-PID limitation
-- Phase 2 coverage >95% incl. config_flow 100%
-- Phase 3 docs (`docs-*`); Phase 4 brands PR
-- Finalize: bump manifest `quality_scale` and flip yaml rules to done
+### Completed since
+- 1.9 `repair-issues` — repair raised on webhook-registration failure, cleared on success/unload.
+- 1.3 `test-before-setup` — marked exempt (push model; no device connection at setup).
+- 1.11 `exception-translations` — all raised errors translatable; missing keys added.
+- `entity-translations` — static entities translated; dynamic-PID limitation documented.
+- Phase 2 `test-coverage` — **95.8 %** overall, config_flow.py & param_loader.py 100 %, 332 passing.
+- Phase 3 docs — README rewritten to cover all `docs-*` rules.
+
+### Remaining for Gold
+- `brands` — external PR to `home-assistant/brands` (logo + icon). **Only blocker.**
+- Finalize: once `brands` merges, bump manifest `quality_scale` to `gold`.
+
+### Beyond Gold
+- Platinum: `strict-typing` (see the Platinum plan). `async-dependency` and
+  `inject-websession` already satisfied.
