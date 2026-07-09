@@ -530,3 +530,104 @@ class TestGitHubParamsUpdate:
         params = get_all_params()
         assert isinstance(params, dict)
         assert "SOC" in params  # Known param should still exist
+
+class TestUpdateParamsFromGitHub:
+    """Tests for async_update_params_from_github write/update logic."""
+
+    @pytest.mark.asyncio
+    async def test_update_returns_false_when_fetch_fails(self) -> None:
+        """No update when GitHub fetch returns no params."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        with patch.object(
+            pl, "async_fetch_params_from_github",
+            AsyncMock(return_value=(None, None)),
+        ):
+            assert await pl.async_update_params_from_github(MagicMock()) is False
+
+    @pytest.mark.asyncio
+    async def test_update_returns_false_when_hash_unchanged(self) -> None:
+        """No update when the fetched hash matches the current hash."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        with (
+            patch.object(
+                pl, "_async_get_current_params_hash",
+                AsyncMock(return_value="samehash"),
+            ),
+            patch.object(
+                pl, "async_fetch_params_from_github",
+                AsyncMock(return_value=({"X": {}}, "samehash")),
+            ),
+        ):
+            assert await pl.async_update_params_from_github(MagicMock()) is False
+
+    @pytest.mark.asyncio
+    async def test_update_writes_new_params(self, tmp_path) -> None:
+        """A changed hash writes the new params and updates memory."""
+        import json
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        target = tmp_path / "params.json"
+        new_params = {"NEWP": {"description": "New", "settings": {"unit": "V"}}}
+        saved = dict(pl._PARAMS)
+        try:
+            with (
+                patch.object(
+                    pl, "_async_get_current_params_hash",
+                    AsyncMock(return_value="oldhash"),
+                ),
+                patch.object(
+                    pl, "async_fetch_params_from_github",
+                    AsyncMock(return_value=(new_params, "newhash")),
+                ),
+                patch.object(pl, "_get_params_file_path", return_value=target),
+            ):
+                result = await pl.async_update_params_from_github(MagicMock())
+
+            assert result is True
+            assert json.loads(target.read_text(encoding="utf-8")) == new_params
+            assert pl._PARAMS == new_params
+        finally:
+            # Restore the module-level params so other tests are unaffected.
+            pl._PARAMS.clear()
+            pl._PARAMS.update(saved)
+
+    @pytest.mark.asyncio
+    async def test_update_handles_write_error(self, tmp_path) -> None:
+        """A write failure returns False and leaves memory untouched."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        new_params = {"NEWP": {"description": "New", "settings": {"unit": "V"}}}
+        saved = dict(pl._PARAMS)
+        try:
+            with (
+                patch.object(
+                    pl, "_async_get_current_params_hash",
+                    AsyncMock(return_value="oldhash"),
+                ),
+                patch.object(
+                    pl, "async_fetch_params_from_github",
+                    AsyncMock(return_value=(new_params, "newhash")),
+                ),
+                patch.object(pl, "_get_params_file_path", return_value=tmp_path / "p.json"),
+                patch(
+                    "custom_components.wican.param_loader.asyncio.to_thread",
+                    AsyncMock(side_effect=OSError("disk full")),
+                ),
+            ):
+                result = await pl.async_update_params_from_github(MagicMock())
+
+            assert result is False
+            assert pl._PARAMS == saved
+        finally:
+            pl._PARAMS.clear()
+            pl._PARAMS.update(saved)
