@@ -87,6 +87,17 @@ exclude_lines = [
 precision = 2
 show_missing = true
 
+[tool.mypy]
+# Strict typing gate for the Platinum quality-scale rule. Approximates Home
+# Assistant core's strict check for a custom component. Run with:
+#   python -m mypy custom_components/wican
+python_version = "3.13"
+strict = true
+follow_imports = "silent"
+ignore_missing_imports = true
+warn_unused_ignores = true
+files = ["custom_components/wican"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

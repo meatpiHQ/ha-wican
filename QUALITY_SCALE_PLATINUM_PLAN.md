@@ -89,6 +89,29 @@ effort: **~1 focused session**, file by file, re-running mypy after each.
 
 ---
 
+## strict-typing file checklist
+
+Tick each file when `python -m mypy custom_components/wican` reports **0 errors
+for that file**. Baseline: 55 errors / 12 files.
+
+- [ ] `config_flow.py` (13)
+- [ ] `sensor.py` (13)
+- [ ] `update.py` (6)
+- [ ] `attributes.py` (5)
+- [ ] `device_tracker.py` (4)
+- [ ] `binary_sensor.py` (4)
+- [ ] `param_loader.py` (3)
+- [ ] `entity.py` (2)
+- [ ] `coordinator.py` (2)
+- [ ] `__init__.py` (1)
+- [ ] `helpers.py` (1)
+- [ ] `github_releases.py` (1)
+
+Tooling:
+- [x] `[tool.mypy]` strict config in `pyproject.toml`
+- [x] `mypy` added to `requirements_test.txt`
+- [ ] CI job / pre-commit running `mypy custom_components/wican`
+
 ## Workstreams
 
 ### P1 — Tooling & baseline (do first)
