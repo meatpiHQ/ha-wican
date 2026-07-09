@@ -151,7 +151,10 @@ rules:
     status: done
     comment: async_step_reconfigure updates host/mDNS and reloads the entry.
   repair-issues:
-    status: todo
+    status: done
+    comment: >
+      A repair issue is raised when webhook registration fails after all
+      retries and cleared on the next successful registration or on unload.
   stale-devices:
     status: exempt
     comment: >

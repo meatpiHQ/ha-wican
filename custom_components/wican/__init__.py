@@ -16,6 +16,7 @@ from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_WEBHOOK_ID, EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 import voluptuous as vol
@@ -187,6 +188,36 @@ def _extract_request_ip(request: Request) -> str | None:
         return _normalize_ip(request.remote)
 
     return None
+
+
+def _webhook_repair_issue_id(entry: WiCANConfigEntry) -> str:
+    """Return the repair issue id for a failed webhook registration."""
+    return f"webhook_registration_failed_{entry.entry_id}"
+
+
+def _raise_webhook_repair(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    endpoints: str,
+) -> None:
+    """Surface a repair issue when the device cannot be reached to register."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        _webhook_repair_issue_id(entry),
+        is_fixable=False,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key="webhook_registration_failed",
+        translation_placeholders={
+            "device": entry.title,
+            "endpoints": endpoints,
+        },
+    )
+
+
+def _clear_webhook_repair(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+    """Clear a previously raised webhook-registration repair issue."""
+    ir.async_delete_issue(hass, DOMAIN, _webhook_repair_issue_id(entry))
 
 
 async def async_setup_entry(  # noqa: C901, PLR0915
@@ -366,6 +397,7 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a config entry."""
     webhook.async_unregister(hass, entry.runtime_data.webhook_id)
+    _clear_webhook_repair(hass, entry)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
@@ -551,6 +583,8 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
                                     "Failed to cache IP: %s", cache_err,
                                 )
 
+                            # Clear any prior "cannot register" repair issue.
+                            _clear_webhook_repair(hass, entry)
                             return True
 
                         text = await resp.text()
@@ -617,6 +651,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
             await asyncio.sleep(backoff_seconds)
 
     # All retries failed
+    endpoints_str = ", ".join(str(ep) for ep in endpoints)
     _LOGGER.error(
         "Failed to register webhook after %d attempts. "
         "Device may not send updates to Home Assistant. "
@@ -624,8 +659,9 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
         "2) Home Assistant can reach device at %s, "
         "3) Device firewall allows connections on port 80",
         max_retries,
-        ", ".join(str(ep) for ep in endpoints),
+        endpoints_str,
     )
+    _raise_webhook_repair(hass, entry, endpoints_str)
     return False
 
 

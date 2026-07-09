@@ -80,6 +80,12 @@
         }
       }
     },
+    "issues": {
+      "webhook_registration_failed": {
+        "title": "WiCAN device unreachable",
+        "description": "Home Assistant could not register its webhook with the WiCAN device \"{device}\" after several attempts (tried: {endpoints}).\n\nUntil this is resolved the device will not push updates. Please check that:\n\n1. The device is powered on and connected to the network.\n2. Home Assistant can reach the device at the address above.\n3. The device firewall allows connections on port 80.\n\nThe issue clears automatically once registration succeeds."
+      }
+    },
     "exceptions": {
       "firmware_download_failed": {
         "message": "Failed to download firmware from GitHub: {error}"

@@ -208,6 +208,46 @@ async def test_webhook_registration_fails_after_max_retries(
     assert mock_session.post.call_count >= 3
 
 
+async def test_webhook_registration_raises_and_clears_repair(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_session,
+) -> None:
+    """A failed registration raises a repair issue; a later success clears it."""
+    from homeassistant.helpers import issue_registry as ir
+
+    from custom_components.wican import (
+        _async_register_webhook_on_device,
+        _webhook_repair_issue_id,
+    )
+
+    mock_config_entry.add_to_hass(hass)
+    with patch(
+        "custom_components.wican.async_get_clientsession",
+        return_value=mock_session,
+    ):
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        entry = hass.config_entries.async_get_entry(mock_config_entry.entry_id)
+        issue_id = _webhook_repair_issue_id(entry)
+        registry = ir.async_get(hass)
+
+        # All endpoints fail -> repair issue is created.
+        mock_session.post.side_effect = ClientError("Connection refused")
+        await _async_register_webhook_on_device(hass, entry, max_retries=1)
+        assert registry.async_get_issue(DOMAIN, issue_id) is not None
+
+        # A subsequent successful registration clears the issue.
+        ok_response = Mock()
+        ok_response.status = int(HTTPStatus.OK)
+        ok_response.text = AsyncMock(return_value="OK")
+        mock_session.post.side_effect = None
+        mock_session.post.return_value = ok_response
+        await _async_register_webhook_on_device(hass, entry, max_retries=1)
+        assert registry.async_get_issue(DOMAIN, issue_id) is None
+
+
 async def test_webhook_registration_timeout_handling(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
