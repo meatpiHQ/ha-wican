@@ -27,9 +27,6 @@ _LOGGER = logging.getLogger(__name__)
 # Push-based integration; entities are read-only and never poll the device.
 PARALLEL_UPDATES = 0
 
-# Entity will be named "WiCAN Device Location" with has_entity_name=True
-TRACKER_NAME = "Location"
-
 
 async def async_setup_entry(
     _hass: HomeAssistant,
@@ -57,7 +54,7 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_name = TRACKER_NAME
+    _attr_translation_key = "location"
     _attr_icon = "mdi:map-marker"
 
     def __init__(self, config_entry: WiCANConfigEntry) -> None:

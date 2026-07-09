@@ -139,8 +139,11 @@ rules:
     status: todo
     comment: Audit all raised errors for translation keys.
   icon-translations:
-    status: todo
-    comment: Migrate _attr_icon/icon= to icons.json.
+    status: done
+    comment: >
+      Static sensor/binary_sensor entities use icons.json. Dynamic PID sensors
+      use runtime device_class-derived icons (keys unknown ahead of time);
+      device_tracker uses a single fixed icon.
   reconfiguration-flow:
     status: done
     comment: async_step_reconfigure updates host/mDNS and reloads the entry.

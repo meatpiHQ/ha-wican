@@ -1,0 +1,26 @@
+{
+  "entity": {
+    "sensor": {
+      "batt_voltage": {
+        "default": "mdi:car-battery"
+      },
+      "wifi_mode": {
+        "default": "mdi:wifi"
+      },
+      "vpn_status": {
+        "default": "mdi:shield-key"
+      },
+      "uptime": {
+        "default": "mdi:clock-outline"
+      }
+    },
+    "binary_sensor": {
+      "ecu_status": {
+        "default": "mdi:car-connected"
+      },
+      "ble_status": {
+        "default": "mdi:bluetooth"
+      }
+    }
+  }
+}
