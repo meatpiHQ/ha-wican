@@ -82,7 +82,9 @@ rules:
     comment: async_unload_entry unregisters webhook and unloads platforms.
   docs-configuration-parameters:
     status: done
-    comment: README documents the Post Interval option (default, range, effect).
+    comment: >
+      README documents the Post Interval and history-backfill options
+      (defaults, ranges, effects) plus a dedicated history-backfill section.
   docs-installation-parameters:
     status: done
     comment: README documents the manual setup inputs (mdns, host).
@@ -109,7 +111,7 @@ rules:
   test-coverage:
     status: done
     comment: >
-      97.1% overall, 512 tests (coordinator.py, device_tracker.py,
+      97.2% overall, 575 tests (coordinator.py, device_tracker.py,
       binary_sensor.py, button.py, api.py, devices.py at 100%). Includes an
       end-to-end
       device simulator plus failure-injection suites (test_device_chaos.py,

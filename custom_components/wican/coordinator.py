@@ -73,10 +73,7 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # No push received yet; stay available while waiting for the device.
             return self._data
 
-        post_interval = self.config_entry.options.get(
-            CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL,
-        )
-        threshold = max(post_interval * DEVICE_STALE_FACTOR, MIN_DEVICE_STALE_SECONDS)
+        threshold = self.staleness_threshold()
         elapsed = (dt_util.utcnow() - self._last_push).total_seconds()
         if elapsed > threshold:
             raise UpdateFailed(
@@ -85,6 +82,15 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
         return self._data
+
+    def staleness_threshold(self) -> float:
+        """Return the seconds without a push after which the device is stale."""
+        post_interval = self.config_entry.options.get(
+            CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL,
+        )
+        return float(
+            max(post_interval * DEVICE_STALE_FACTOR, MIN_DEVICE_STALE_SECONDS),
+        )
 
     @callback
     def async_update_listeners(self) -> None:
@@ -118,11 +124,15 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Initialize with empty data - webhook pushes will populate it
         await self.async_refresh()
 
-    def handle_webhook_data(self, data: dict[str, Any]) -> None:
+    def handle_webhook_data(self, data: dict[str, Any]) -> bool:
         """Handle incoming webhook data.
 
         This is called by the webhook handler when new data arrives.
         It updates the coordinator's data and notifies all listeners.
+
+        Returns True when this push ended a data gap (the device had been
+        silent past the staleness threshold) — the trigger for the SD-card
+        history backfill.
         """
         # Defensive: ignore malformed (non-object) payloads instead of raising,
         # so a misbehaving device cannot break state updates for others.
@@ -130,10 +140,16 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning(
                 "Ignoring non-object WiCAN webhook data (%s)", type(data).__name__,
             )
-            return
+            return False
 
         # Validate device identity before processing data
         self._validate_device_identity(data)
+
+        # Detect a resumed-after-gap push BEFORE stamping the new push time.
+        resumed_after_gap = False
+        if self._last_push is not None:
+            elapsed = (dt_util.utcnow() - self._last_push).total_seconds()
+            resumed_after_gap = elapsed > self.staleness_threshold()
 
         # Update internal data store
         self._data.update(data)
@@ -152,6 +168,8 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.exception(
                 "Unexpected error while notifying entities of new WiCAN data",
             )
+
+        return resumed_after_gap
 
     def _validate_device_identity(self, data: dict[str, Any]) -> None:
         """Ensure device identity hasn't changed.

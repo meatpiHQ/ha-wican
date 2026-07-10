@@ -25,10 +25,14 @@ from yarl import URL
 
 from .api import MeatPiApiClient
 from .const import (
+    COMPONENT_DATA_LOGGER,
     CONF_DEVICE_TYPE,
+    CONF_HISTORY_SYNC,
     CONF_POST_INTERVAL,
+    DEFAULT_HISTORY_SYNC,
     DEFAULT_POST_INTERVAL,
     DOMAIN,
+    HISTORY_SYNC_MIN_INTERVAL,
     IP_CACHE_DURATION,
     MAX_DEVICE_INFO_FIELD_LENGTH,
     PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
@@ -43,6 +47,7 @@ from .devices import WICAN_FAMILY_TYPES, get_profile, infer_device_type
 from .exceptions import WiCANWebhookError
 from .github_releases import GitHubReleasesCoordinator
 from .helpers import resolve_device_webhook_urls
+from .history import async_remove_history_store, async_sync_history
 from .models import WiCANRuntimeData
 from .param_loader import async_update_params_from_github
 
@@ -541,7 +546,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         # connection info. Otherwise an impostor's device_id would be written to
         # the config entry first and the identity check would pass against it.
         try:
-            coordinator.handle_webhook_data(data)
+            resumed_after_gap = coordinator.handle_webhook_data(data)
         except ConfigEntryError:
             _LOGGER.exception(
                 "Rejecting webhook due to device identity validation failure",
@@ -568,6 +573,11 @@ async def async_setup_entry(  # noqa: C901, PLR0915
                 hass.async_create_task(
                     _async_request_capability_probe(hass, entry),
                 )
+
+        # This push ended a silence gap: the device may have logged data to
+        # its SD card while away — backfill it into long-term statistics.
+        if resumed_after_gap:
+            _schedule_history_sync(hass, entry)
 
         # Keep dispatcher for backward compatibility during migration
         async_dispatcher_send(hass, DOMAIN, webhook_id, data)
@@ -601,6 +611,13 @@ async def async_unload_entry(
     webhook.async_unregister(hass, entry.runtime_data.webhook_id)
     _clear_webhook_repair(hass, entry)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, entry: WiCANConfigEntry,
+) -> None:
+    """Clean up persisted state when a config entry is removed for good."""
+    await async_remove_history_store(hass, entry)
 
 
 def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
@@ -752,6 +769,60 @@ async def _async_probe_capabilities(
         async_dispatcher_send(
             hass, f"{SIGNAL_CAPABILITIES_UPDATED}_{entry.entry_id}",
         )
+
+    # A reachable data_logger device may hold rows recorded while HA was
+    # down or the device was away — catch up (rate-limited, coalesced).
+    if capabilities.has_component(COMPONENT_DATA_LOGGER):
+        _schedule_history_sync(hass, entry)
+
+
+def _schedule_history_sync(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+    """Schedule a history backfill run if enabled, capable, and not rate-limited."""
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return
+    if not entry.options.get(CONF_HISTORY_SYNC, DEFAULT_HISTORY_SYNC):
+        return
+    if not runtime.capabilities.has_component(COMPONENT_DATA_LOGGER):
+        return
+    now = time.monotonic()
+    if (
+        runtime.last_history_sync
+        and now - runtime.last_history_sync < HISTORY_SYNC_MIN_INTERVAL
+    ):
+        return
+    runtime.last_history_sync = now
+    hass.async_create_task(_async_request_history_sync(hass, entry))
+
+
+async def _async_request_history_sync(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+) -> None:
+    """Run a history backfill, coalescing concurrent requests.
+
+    Same pattern as webhook registration and the capability probe: one run
+    at a time, requests arriving meanwhile fold into a single trailing
+    re-run. The sync itself never raises.
+    """
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return
+    runtime.history_sync_pending = True
+    if runtime.history_sync_running:
+        return
+    runtime.history_sync_running = True
+    try:
+        while runtime.history_sync_pending:
+            runtime.history_sync_pending = False
+            result = await async_sync_history(hass, entry)
+            # The entry may have been unloaded while the sync was running.
+            current = getattr(entry, "runtime_data", None)
+            if current is None:
+                return
+            current.last_history_result = result
+    finally:
+        runtime.history_sync_running = False
 
 
 async def _async_request_webhook_registration(

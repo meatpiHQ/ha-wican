@@ -46,6 +46,20 @@
         "unknown": "Unknown error occurred"
       }
     },
+    "options": {
+      "step": {
+        "init": {
+          "data": {
+            "post_interval": "Post interval (seconds)",
+            "history_sync": "Backfill history from the device log"
+          },
+          "data_description": {
+            "post_interval": "How often the device pushes data to Home Assistant.",
+            "history_sync": "When the device reconnects after being away, import the data it logged to its SD card into each sensor's long-term statistics (hourly resolution). Requires the data logger to be enabled on the device."
+          }
+        }
+      }
+    },
     "entity": {
       "sensor": {
         "wifi_mode": {

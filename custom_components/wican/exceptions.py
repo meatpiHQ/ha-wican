@@ -26,7 +26,18 @@ class WiCANDataError(WiCANError):
 
 
 class MeatPiApiError(WiCANError):
-    """Exception raised when a device HTTP API request fails."""
+    """Exception raised when a device HTTP API request fails.
+
+    ``status`` carries the HTTP status code when the failure was an
+    HTTP-level error from a reachable device (None for transport errors),
+    so callers can react to specific codes (e.g. 404 = route not
+    implemented by this firmware).
+    """
+
+    def __init__(self, *args: object, status: int | None = None) -> None:
+        """Initialize the error, optionally recording the HTTP status."""
+        super().__init__(*args)
+        self.status = status
 
 
 class MeatPiApiConnectionError(MeatPiApiError):

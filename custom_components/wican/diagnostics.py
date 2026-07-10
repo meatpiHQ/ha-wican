@@ -12,6 +12,26 @@ if TYPE_CHECKING:
     from . import WiCANConfigEntry
 
 
+def _history_sync_diagnostics(config_entry: WiCANConfigEntry) -> dict[str, Any] | None:
+    """Summarize the last history-backfill run for diagnostics."""
+    result = config_entry.runtime_data.last_history_result
+    if result is None:
+        return None
+    return {
+        "ran": result.ran,
+        "source": result.source,
+        "rows_fetched": result.rows_fetched,
+        "rows_used": result.rows_used,
+        "rows_rejected": result.rows_rejected,
+        "hours_imported": result.hours_imported,
+        "hours_skipped_existing": result.hours_skipped_existing,
+        "pids_imported": result.pids_imported,
+        "pids_skipped": result.pids_skipped,
+        "errors": list(result.errors),
+        "watermark": result.watermark,
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, config_entry: WiCANConfigEntry,
 ) -> dict[str, Any]:
@@ -55,6 +75,7 @@ async def async_get_config_entry_diagnostics(
             "api_level": config_entry.runtime_data.capabilities.api_level,
             "components": sorted(config_entry.runtime_data.capabilities.components),
         },
+        "history_sync": _history_sync_diagnostics(config_entry),
         "runtime_data": {
             "webhook_id": "**REDACTED**",
             "post_interval": config_entry.runtime_data.post_interval,

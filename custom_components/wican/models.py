@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .coordinator import WiCANDataUpdateCoordinator
     from .devices import MeatPiDeviceProfile
     from .github_releases import GitHubReleasesCoordinator
+    from .history import HistorySyncResult
 
 
 @dataclass
@@ -47,3 +48,9 @@ class WiCANRuntimeData:
     # that was asleep at setup still gains its control entities later.
     probe_successful: bool = False
     last_probe_retry: float = 0.0
+    # History backfill (see history.py): run coalescing + rate limiting,
+    # and the last run's counters for diagnostics.
+    history_sync_running: bool = False
+    history_sync_pending: bool = False
+    last_history_sync: float = 0.0
+    last_history_result: HistorySyncResult | None = None

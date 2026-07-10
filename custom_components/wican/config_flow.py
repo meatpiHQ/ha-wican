@@ -15,7 +15,9 @@ from yarl import URL
 
 from .const import (
     CONF_DEVICE_TYPE,
+    CONF_HISTORY_SYNC,
     CONF_POST_INTERVAL,
+    DEFAULT_HISTORY_SYNC,
     DEFAULT_POST_INTERVAL,
     DOMAIN,
     MAX_POST_INTERVAL,
@@ -287,6 +289,10 @@ class WiCANOptionsFlow(config_entries.OptionsFlow):
                     vol.Coerce(int),
                     vol.Range(min=MIN_POST_INTERVAL, max=MAX_POST_INTERVAL),
                 ),
+                vol.Required(
+                    CONF_HISTORY_SYNC,
+                    default=options.get(CONF_HISTORY_SYNC, DEFAULT_HISTORY_SYNC),
+                ): bool,
             },
         )
         return self.async_show_form(step_id="init", data_schema=data_schema)

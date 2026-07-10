@@ -121,6 +121,7 @@ After setup, use the integration's **Configure** button:
 | Option | Default | Range | Description |
 |---|---|---|---|
 | **Post Interval** | 15 s | 1–3600 s | How often the device pushes data to Home Assistant. Lower values mean more frequent updates and more network traffic. |
+| **Backfill history from the device log** | on | on/off | When the device reconnects after being away, import the AutoPID data it logged to its SD card into each sensor's long-term statistics at the recorded times (see [History backfill](#history-backfill-offline-drives)). |
 
 You can also change the device address later with the **Reconfigure** option
 without deleting and re-adding the integration.
@@ -133,6 +134,36 @@ without deleting and re-adding the integration.
   proxy).
 - If no local HTTP Home Assistant URL is available, WiCAN-Pro `v4.49+` can fall
   back to a single external HTTPS webhook URL.
+
+## History backfill (offline drives)
+
+A vehicle spends most of its life away from your WiFi. If the device has
+its **data logger** enabled (firmware V6+, SD card), it keeps recording
+AutoPID data with timestamps while offline. When it reconnects, this
+integration detects the gap, fetches the logged rows, and imports them
+into each PID sensor's **long-term statistics** at the times they were
+recorded — filling the gap in the long-term graphs.
+
+What to expect:
+
+- Backfilled data appears at **hourly resolution** (mean/min/max per
+  hour). This matches Home Assistant's permanent history layer — even
+  live-recorded data is reduced to hourly statistics after the recorder
+  retention window (default 10 days), so older backfilled drives are
+  indistinguishable from live-recorded ones.
+- The fine-grained history detail view and logbook stay empty for the
+  offline period (Home Assistant has no supported way to backfill raw
+  states), automations are never retro-triggered, and GPS location
+  history cannot be backfilled.
+- Live data always wins: hours Home Assistant already recorded are never
+  overwritten, and re-syncs are idempotent.
+- Requirements: firmware with the data logger enabled (params stream in
+  `jsonl` or `csv` format for current firmware), an SD card, and a valid
+  device clock (the device syncs via SNTP/RTC).
+
+The sync runs automatically when the device reconnects after a gap and
+shortly after Home Assistant starts; it can be disabled per device in
+the integration options.
 
 ## Use cases
 

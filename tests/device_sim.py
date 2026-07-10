@@ -20,6 +20,7 @@ Used by ``test_device_simulation.py`` (baseline behaviour),
 from __future__ import annotations
 
 from datetime import timedelta
+import json
 from typing import Any
 from unittest.mock import patch
 
@@ -168,6 +169,14 @@ class SimulatedDeviceApi:
         self.status_payload: Any = _UNSET
         self.settings_payload: Any = _UNSET
         self.calls: list[tuple[str, str]] = []
+        # Data-logger simulation: rows served by the cursor export route
+        # (when export_supported) and/or rotated files served over /api/fs.
+        self.export_supported = False
+        self.export_rows: list[dict[str, Any]] = []
+        self.export_payload_override: str | None = None
+        self.logger_dir = "/sd/logs"
+        self.log_files: dict[str, str] = {}
+        self.active_log_file: str | None = None
 
         for base in base_urls:
             base_url = URL(base)
@@ -179,6 +188,10 @@ class SimulatedDeviceApi:
                 ("get", "/api/webhook"),
                 ("post", "/api/webhook"),
                 ("delete", "/api/webhook"),
+                ("get", "/api/logger"),
+                ("get", "/api/logger/export"),
+                ("get", "/api/fs/list"),
+                ("get", "/api/fs/download"),
             ):
                 getattr(aioclient_mock, method)(
                     str(base_url.with_path(path)), side_effect=self._respond,
@@ -267,6 +280,45 @@ class SimulatedDeviceApi:
                     },
                 )
             return self._json(method, url, {"error": "not found"}, status=404)
+        if path == "/api/logger":
+            return self._json(
+                method,
+                url,
+                {
+                    "enabled": True,
+                    "running": True,
+                    "paused": False,
+                    "file": self.active_log_file,
+                    "dir": self.logger_dir,
+                },
+            )
+        if path == "/api/logger/export":
+            return self._export(method, url)
+        if path == "/api/fs/list":
+            if url.query.get("path") != self.logger_dir:
+                return self._json(method, url, {"error": "invalid path"}, status=400)
+            return self._json(
+                method,
+                url,
+                {
+                    "path": self.logger_dir,
+                    "entries": [
+                        {"name": name, "dir": False, "size": len(content)}
+                        for name, content in sorted(self.log_files.items())
+                    ],
+                },
+            )
+        if path == "/api/fs/download":
+            requested = url.query.get("path", "")
+            name = requested.rsplit("/", 1)[-1]
+            if name == self.active_log_file:
+                # The active file is write-locked on the real device.
+                return self._json(method, url, {"error": "file locked"}, status=423)
+            if name in self.log_files:
+                return AiohttpClientMockResponse(
+                    method, url, text=self.log_files[name],
+                )
+            return self._json(method, url, {"error": "not found"}, status=404)
         if path in ("/api/restart", "/api/rtc/sync") and self.api_level < 6:
             # Legacy firmware has no control routes.
             return self._json(method, url, {"error": "not found"}, status=404)
@@ -279,6 +331,33 @@ class SimulatedDeviceApi:
                 return AiohttpClientMockResponse(method, url, status=204)
             return self._json(method, url, {"url": "", "enabled": True})
         return self._json(method, url, {"error": "unknown route"}, status=404)
+
+    def _export(self, method: str, url: URL) -> AiohttpClientMockResponse:
+        """Serve the cursor-based NDJSON export route (firmware ask #8)."""
+        if not self.export_supported:
+            return self._json(method, url, {"error": "not found"}, status=404)
+        if self.export_payload_override is not None:
+            return AiohttpClientMockResponse(
+                method, url, text=self.export_payload_override,
+            )
+        try:
+            since = float(url.query.get("since", "0"))
+        except ValueError:
+            since = 0.0
+        try:
+            limit = max(1, int(url.query.get("limit", "1000")))
+        except ValueError:
+            limit = 1000
+        matching = sorted(
+            (row for row in self.export_rows if row.get("ts", 0) > since),
+            key=lambda row: row.get("ts", 0),
+        )
+        page = matching[:limit]
+        body = "\n".join(json.dumps(row) for row in page)
+        headers = {}
+        if page:
+            headers["X-Next-Since"] = str(page[-1].get("ts", since))
+        return AiohttpClientMockResponse(method, url, text=body, headers=headers)
 
     @staticmethod
     def _json(
@@ -472,6 +551,42 @@ class WiCANDeviceSimulator:
             self.fw_version = fw_version
         if hw_version is not None:
             self.hw_version = hw_version
+
+    def seed_log_rows(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        via: str = "export",
+        file_format: str = "jsonl",
+        filename: str | None = None,
+        active: bool = False,
+    ) -> None:
+        """Seed offline-drive rows into the simulated device's data logger.
+
+        ``via="export"`` serves them through the cursor export route;
+        ``via="file"`` writes a rotated log file (jsonl or csv) served over
+        the /api/fs routes, optionally marked as the write-locked active
+        file.
+        """
+        assert self.api is not None, "attach_api() must be called first"
+        if via == "export":
+            self.api.export_supported = True
+            self.api.export_rows.extend(rows)
+            return
+        first_ts = int(rows[0]["ts"]) if rows else 0
+        extension = "csv" if file_format == "csv" else "jsonl"
+        name = filename or f"dl_{first_ts}.{extension}"
+        if file_format == "csv":
+            lines = ["ts,name,value"]
+            lines.extend(
+                f"{row['ts']},{row['name']},{row['value']}" for row in rows
+            )
+            content = "\n".join(lines)
+        else:
+            content = "\n".join(json.dumps(row) for row in rows)
+        self.api.log_files[name] = content
+        if active:
+            self.api.active_log_file = name
 
     def ota_to_v6(
         self,

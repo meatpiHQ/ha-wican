@@ -2,6 +2,7 @@
     "domain": "wican",
     "name": "MeatPi",
     "codeowners": ["@meatpiHQ", "@jay-oswald"],
+    "after_dependencies": ["recorder"],
     "config_flow": true,
     "dependencies": ["webhook"],
     "documentation": "https://github.com/meatpiHQ/ha-wican",

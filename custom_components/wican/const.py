@@ -47,6 +47,29 @@ MAX_API_COMPONENT_NAME_LENGTH = 64
 # setup), retry it when telemetry pushes arrive — but at most this often.
 PROBE_RETRY_INTERVAL = 300  # seconds
 
+# History backfill (SD-card data logger → HA long-term statistics).
+# See notes/HISTORICAL_DATA_SYNC.md for the design.
+CONF_HISTORY_SYNC = "history_sync"
+DEFAULT_HISTORY_SYNC = True
+COMPONENT_DATA_LOGGER = "data_logger"
+LOGGER_STATUS_PATH = "/api/logger"
+LOGGER_EXPORT_PATH = "/api/logger/export"
+FS_LIST_PATH = "/api/fs/list"
+FS_DOWNLOAD_PATH = "/api/fs/download"
+HISTORY_STORAGE_VERSION = 1
+# Bounds: a healthy device is far below these; a glitching one must not be
+# able to stall the event loop or balloon memory/statistics.
+HISTORY_MAX_AGE_DAYS = 30  # never import rows older than this
+HISTORY_FUTURE_SKEW = 300  # seconds of clock skew tolerated into the future
+HISTORY_MAX_ROWS_PER_SYNC = 200_000
+HISTORY_MAX_FILE_BYTES = 8 * 1024 * 1024
+HISTORY_MAX_FILES_PER_SYNC = 48
+HISTORY_MAX_PIDS_PER_SYNC = 200
+HISTORY_EXPORT_PAGE_ROWS = 2000  # rows requested per export page
+HISTORY_EXPORT_MAX_PAGES = 200
+HISTORY_EXPORT_PAGE_BYTES = 2 * 1024 * 1024  # size cap per export page
+HISTORY_SYNC_MIN_INTERVAL = 300  # seconds between sync runs per entry
+
 # Device API levels (capability probe result)
 API_LEVEL_LEGACY = 0  # webhook-only firmware (pre-V6)
 API_LEVEL_V6 = 6  # full /api/* HTTP surface
