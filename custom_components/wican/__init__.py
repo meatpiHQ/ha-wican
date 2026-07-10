@@ -1,4 +1,4 @@
-"""WiCAN integration."""
+"""MeatPi integration (WiCAN and other MeatPi devices)."""
 
 from __future__ import annotations
 
@@ -23,18 +23,23 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 import voluptuous as vol
 from yarl import URL
 
+from .api import MeatPiApiClient
 from .const import (
+    CONF_DEVICE_TYPE,
     CONF_POST_INTERVAL,
     DEFAULT_POST_INTERVAL,
     DOMAIN,
     IP_CACHE_DURATION,
     MAX_DEVICE_INFO_FIELD_LENGTH,
     PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
+    PROBE_RETRY_INTERVAL,
+    SIGNAL_CAPABILITIES_UPDATED,
     WEBHOOK_MAX_RETRIES,
     WEBHOOK_REGISTRATION_TIMEOUT,
     WEBHOOK_RETRY_DELAY_BASE,
 )
 from .coordinator import WiCANDataUpdateCoordinator
+from .devices import WICAN_FAMILY_TYPES, get_profile, infer_device_type
 from .exceptions import WiCANWebhookError
 from .github_releases import GitHubReleasesCoordinator
 from .helpers import resolve_device_webhook_urls
@@ -49,6 +54,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.DEVICE_TRACKER,
     Platform.UPDATE,
 ]
@@ -260,6 +266,30 @@ def _collect_device_reported_fields(data: dict[str, Any]) -> dict[str, str]:
     return fields
 
 
+def _merge_device_fields(
+    entry: WiCANConfigEntry,
+    device_info_fields: dict[str, str],
+) -> tuple[dict[str, Any], bool, bool]:
+    """Merge device-reported fields into a copy of the entry data.
+
+    Returns the merged data plus whether anything changed and whether a
+    connection-relevant field (host/ip/mdns) changed.
+    """
+    new_data = dict(entry.data)
+    connection_field_changed = False
+    data_changed = False
+    for key, value in device_info_fields.items():
+        # Skip if value hasn't actually changed
+        if new_data.get(key) == value:
+            continue
+        new_data[key] = value
+        data_changed = True
+        # Only mark as connection change if host/ip/mdns actually changed
+        if key in {"host", "ip", "mdns"}:
+            connection_field_changed = True
+    return new_data, data_changed, connection_field_changed
+
+
 def _persist_device_reported_info(
     hass: HomeAssistant,
     entry: WiCANConfigEntry,
@@ -284,21 +314,26 @@ def _persist_device_reported_info(
     if not device_info_fields:
         return
 
-    new_data = dict(entry.data)
-    connection_field_changed = False
-    data_changed = False
-    for key, value in device_info_fields.items():
-        # Skip if value hasn't actually changed
-        if new_data.get(key) == value:
-            continue
-        new_data[key] = value
-        data_changed = True
-        # Only mark as connection change if host/ip/mdns actually changed
-        if key in {"host", "ip", "mdns"}:
-            connection_field_changed = True
+    new_data, data_changed, connection_field_changed = _merge_device_fields(
+        entry, device_info_fields,
+    )
 
     if not data_changed:
         return
+
+    # Keep the device-type slug in sync with the reported hardware version
+    # (a manually added entry learns its real product type on first push).
+    # Only re-infer inside the WiCAN family: a device_type set by discovery
+    # (espnetlink, meatpi, future slugs) is authoritative and must never be
+    # clobbered by hardware-string guessing.
+    current_type = new_data.get(CONF_DEVICE_TYPE)
+    if "hw_version" in device_info_fields and (
+        not current_type or current_type in WICAN_FAMILY_TYPES
+    ):
+        inferred_type = infer_device_type(new_data.get("hw_version"))
+        if current_type != inferred_type:
+            new_data[CONF_DEVICE_TYPE] = inferred_type
+            entry.runtime_data.device_profile = get_profile(inferred_type)
 
     hass.config_entries.async_update_entry(entry, data=new_data)
     if connection_field_changed:
@@ -312,6 +347,45 @@ def _persist_device_reported_info(
         hass.async_create_task(
             _async_request_webhook_registration(hass, entry),
         )
+
+    # A new address or a new firmware version can change what the control
+    # API offers (e.g. a device OTA-updated to V6 gains control entities).
+    if connection_field_changed or "fw_version" in device_info_fields:
+        hass.async_create_task(
+            _async_request_capability_probe(hass, entry),
+        )
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+) -> bool:
+    """Migrate old config entries to the current schema.
+
+    1.1 → 1.2: backfill the device_type slug (brand framework). Every entry
+    that predates device types is a WiCAN variant, inferred from the stored
+    hardware version.
+    """
+    if entry.version > 1:
+        # Downgrade from a future major version; cannot know the schema.
+        return False
+
+    if entry.minor_version < 2:
+        new_data = dict(entry.data)
+        if not new_data.get(CONF_DEVICE_TYPE):
+            new_data[CONF_DEVICE_TYPE] = infer_device_type(
+                new_data.get("hw_version"),
+            )
+        hass.config_entries.async_update_entry(
+            entry, data=new_data, version=1, minor_version=2,
+        )
+        _LOGGER.debug(
+            "Migrated entry %s to 1.2 (device_type=%s)",
+            entry.title,
+            new_data[CONF_DEVICE_TYPE],
+        )
+
+    return True
 
 
 def _webhook_repair_issue_id(entry: WiCANConfigEntry) -> str:
@@ -372,6 +446,17 @@ async def async_setup_entry(  # noqa: C901, PLR0915
             _LOGGER.warning("Failed to generate webhook_id; setup may fail")
             return False
 
+    # Resolve the device-type profile (brand framework). Migration backfills
+    # device_type for old entries; this guard covers entries created by
+    # flows that could not know the type yet (e.g. manual setup).
+    device_type = entry.data.get(CONF_DEVICE_TYPE)
+    if not device_type:
+        device_type = infer_device_type(entry.data.get("hw_version"))
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_DEVICE_TYPE: device_type},
+        )
+    device_profile = get_profile(device_type)
+
     # Get post interval from options
     post_interval = entry.options.get(CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL)
 
@@ -403,6 +488,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         post_interval=post_interval,
         device_host=entry.data.get("host"),
         device_ip=entry.data.get("ip"),
+        device_profile=device_profile,
     )
 
     # Perform first refresh to initialize coordinator
@@ -468,6 +554,21 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         # Persist any device-reported info (fw/hw versions, connection data).
         _persist_device_reported_info(hass, entry, data, request)
 
+        # A device that pushes is clearly awake. If the capability probe has
+        # never reached it (device was asleep/unreachable at setup), retry
+        # now — rate-limited — so it still gains its control entities.
+        runtime = getattr(entry, "runtime_data", None)
+        if runtime is not None and not runtime.probe_successful:
+            now = time.monotonic()
+            if (
+                runtime.last_probe_retry == 0.0
+                or now - runtime.last_probe_retry >= PROBE_RETRY_INTERVAL
+            ):
+                runtime.last_probe_retry = now
+                hass.async_create_task(
+                    _async_request_capability_probe(hass, entry),
+                )
+
         # Keep dispatcher for backward compatibility during migration
         async_dispatcher_send(hass, DOMAIN, webhook_id, data)
         return Response(status=HTTPStatus.NO_CONTENT)
@@ -483,6 +584,10 @@ async def async_setup_entry(  # noqa: C901, PLR0915
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _schedule_webhook_registration(hass, entry)
+
+    # Discover the device's control capabilities (V6 HTTP API) out-of-band.
+    # A legacy or unreachable device simply keeps legacy capabilities.
+    hass.async_create_task(_async_request_capability_probe(hass, entry))
 
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
@@ -549,6 +654,104 @@ def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry)
             unsub()
 
     entry.async_on_unload(_cancel_startup_registration)
+
+
+def _device_api_base_url(entry: WiCANConfigEntry) -> str | None:
+    """Return the best base URL for talking to the device HTTP API."""
+    runtime = entry.runtime_data
+    for candidate in (
+        runtime.device_host,
+        entry.data.get("host"),
+        entry.data.get("mdns"),
+    ):
+        if candidate:
+            return str(candidate)
+    if runtime.device_ip:
+        return _http_url_from_host(runtime.device_ip)
+    return None
+
+
+async def _async_request_capability_probe(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+) -> None:
+    """Probe device capabilities, coalescing concurrent requests.
+
+    Setup, address changes, and firmware-version changes can all request a
+    probe; like webhook registration, run one at a time and fold requests
+    that arrive meanwhile into a single trailing re-run.
+    """
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return
+    runtime.probe_pending = True
+    if runtime.probe_running:
+        return
+    runtime.probe_running = True
+    try:
+        while runtime.probe_pending:
+            runtime.probe_pending = False
+            await _async_probe_capabilities(hass, entry)
+    finally:
+        runtime.probe_running = False
+
+
+async def _async_probe_capabilities(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+) -> None:
+    """Probe the device control API once and publish the result.
+
+    Never raises: a legacy or unreachable device yields legacy capabilities,
+    and the integration behaves exactly as it did before control support.
+    """
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return
+    base_url = _device_api_base_url(entry)
+    if not base_url:
+        _LOGGER.debug(
+            "Entry %s has no device address; skipping capability probe",
+            entry.entry_id,
+        )
+        return
+
+    api = MeatPiApiClient(async_get_clientsession(hass), base_url)
+    try:
+        capabilities = await api.async_probe()
+    except Exception:  # Defensive: a probe must never break anything else.
+        _LOGGER.exception("Unexpected error probing device capabilities")
+        return
+
+    # The entry may have been unloaded while the probe was in flight.
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return
+
+    runtime.api = api
+
+    if capabilities is None:
+        # Device unreachable (asleep, offline, mid-reboot): keep last-known
+        # capabilities and let telemetry pushes retry the probe later.
+        runtime.probe_successful = False
+        return
+    runtime.probe_successful = True
+
+    previous = runtime.capabilities
+    runtime.capabilities = capabilities
+
+    if capabilities.has_http_api and not previous.has_http_api:
+        _LOGGER.info(
+            "Device %s exposes the control HTTP API (%d components); "
+            "control entities enabled",
+            entry.title,
+            len(capabilities.components),
+        )
+
+    if capabilities != previous:
+        async_dispatcher_send(
+            hass, f"{SIGNAL_CAPABILITIES_UPDATED}_{entry.entry_id}",
+        )
 
 
 async def _async_request_webhook_registration(

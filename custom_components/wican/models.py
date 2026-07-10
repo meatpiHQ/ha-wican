@@ -1,18 +1,23 @@
-"""Data models for WiCAN integration."""
+"""Data models for the MeatPi integration."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from .api import LEGACY_CAPABILITIES, DeviceCapabilities
+from .devices import DEVICE_PROFILES, DEVICE_TYPE_WICAN
+
 if TYPE_CHECKING:
+    from .api import MeatPiApiClient
     from .coordinator import WiCANDataUpdateCoordinator
+    from .devices import MeatPiDeviceProfile
     from .github_releases import GitHubReleasesCoordinator
 
 
 @dataclass
 class WiCANRuntimeData:
-    """Runtime data for WiCAN config entry."""
+    """Runtime data for a MeatPi device config entry."""
 
     coordinator: WiCANDataUpdateCoordinator
     github_coordinator: GitHubReleasesCoordinator
@@ -25,3 +30,20 @@ class WiCANRuntimeData:
     # Webhook-registration coalescing (see _async_request_webhook_registration)
     registration_running: bool = False
     registration_pending: bool = False
+    # Device-type profile (brand framework; defaults to the WiCAN profile,
+    # which matches every install that predates device types).
+    device_profile: MeatPiDeviceProfile = field(
+        default=DEVICE_PROFILES[DEVICE_TYPE_WICAN],
+    )
+    # Control channel: HTTP API client + probed capabilities. Legacy
+    # (pre-V6) devices keep the defaults and get no control entities.
+    api: MeatPiApiClient | None = None
+    capabilities: DeviceCapabilities = LEGACY_CAPABILITIES
+    # Capability-probe coalescing (see _async_request_capability_probe)
+    probe_running: bool = False
+    probe_pending: bool = False
+    # Whether a probe has ever reached the device this runtime. While False,
+    # incoming telemetry pushes retry the probe (rate-limited) so a device
+    # that was asleep at setup still gains its control entities later.
+    probe_successful: bool = False
+    last_probe_retry: float = 0.0

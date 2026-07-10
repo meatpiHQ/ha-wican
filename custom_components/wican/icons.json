@@ -21,6 +21,11 @@
       "ble_status": {
         "default": "mdi:bluetooth"
       }
+    },
+    "button": {
+      "sync_time": {
+        "default": "mdi:clock-check-outline"
+      }
     }
   }
 }

@@ -1,4 +1,4 @@
-"""Config flow for the WiCAN integration."""
+"""Config flow for the MeatPi integration."""
 
 from __future__ import annotations
 
@@ -14,12 +14,14 @@ import voluptuous as vol
 from yarl import URL
 
 from .const import (
+    CONF_DEVICE_TYPE,
     CONF_POST_INTERVAL,
     DEFAULT_POST_INTERVAL,
     DOMAIN,
     MAX_POST_INTERVAL,
     MIN_POST_INTERVAL,
 )
+from .devices import DEVICE_PROFILES, DEVICE_TYPE_GENERIC
 from .helpers import resolve_webhook_url
 
 if TYPE_CHECKING:
@@ -32,10 +34,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for WiCAN discovery via Zeroconf."""
+    """Handle a config flow for MeatPi device discovery via Zeroconf."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -43,6 +45,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.discovered_host: str | None = None
         self.discovered_name: str | None = None
         self.discovered_unique_id: str | None = None
+        self.discovered_device_type: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle manual setup initiated by the user."""
@@ -103,16 +106,36 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not host and not host_ip:
             return self.async_abort(reason="no_host")
 
-        # Accept WiCAN based on provided mDNS: instance name or hostname
+        # Accept any MeatPi device: a dedicated service type (_wican._tcp
+        # today, _meatpi._tcp for current/future products), or — for the
+        # legacy _http._tcp fallback — the WiCAN instance name / hostname.
+        service_type = (getattr(discovery_info, "type", "") or "").lower()
+        is_meatpi_service = service_type.startswith(("_wican.", "_meatpi."))
         is_wican_instance = name == "WiCAN-WebServer"
         is_wican_host = hostname.lower().startswith("wican_")
-        if not (is_wican_instance or is_wican_host):
-            _LOGGER.debug("Ignoring zeroconf service not matching WiCAN: name=%s hostname=%s", name, hostname)
+        if not (is_meatpi_service or is_wican_instance or is_wican_host):
+            _LOGGER.debug(
+                "Ignoring zeroconf service not matching a MeatPi device: name=%s hostname=%s type=%s",
+                name, hostname, service_type,
+            )
             return self.async_abort(reason="not_wican")
 
         # Extract MAC address and device_id from TXT records (from firmware)
         mac_address = properties.get("mac", b"").decode("utf-8") if isinstance(properties.get("mac"), bytes) else properties.get("mac", "")
         device_id = properties.get("device_id", b"").decode("utf-8") if isinstance(properties.get("device_id"), bytes) else properties.get("device_id", "")
+
+        # Device type from TXT records (newer firmware). An unknown slug on a
+        # MeatPi service maps to the generic profile; legacy advertisements
+        # leave it unset and setup infers it from the reported hw_version.
+        raw_device_type = properties.get("device_type", "")
+        if isinstance(raw_device_type, bytes):
+            raw_device_type = raw_device_type.decode("utf-8", errors="replace")
+        if raw_device_type in DEVICE_PROFILES:
+            device_type: str | None = raw_device_type
+        elif service_type.startswith("_meatpi."):
+            device_type = DEVICE_TYPE_GENERIC
+        else:
+            device_type = None
 
         # Use MAC address as unique_id (most stable), fallback to device_id, then hostname
         if mac_address:
@@ -144,7 +167,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-        _LOGGER.info("WiCAN discovered via Zeroconf: name=%s hostname=%s url=%s", name, hostname, mdns_url)
+        _LOGGER.info("MeatPi device discovered via Zeroconf: name=%s hostname=%s url=%s", name, hostname, mdns_url)
 
         # Store discovery info for confirmation step
         self.discovered_mdns = mdns_url
@@ -153,6 +176,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.discovered_unique_id = unique_id
         self.discovered_mac = mac_address
         self.discovered_device_id = device_id
+        self.discovered_device_type = device_type
 
         return await self.async_step_zeroconf_confirm()
 
@@ -180,6 +204,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "webhook_url": webhook_url,
                         "mac": self.discovered_mac,
                         "device_id": self.discovered_device_id,
+                        CONF_DEVICE_TYPE: self.discovered_device_type,
                     }.items()
                     if v
                 },

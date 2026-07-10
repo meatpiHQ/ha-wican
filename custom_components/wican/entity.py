@@ -1,4 +1,4 @@
-"""Base entity for WiCAN integration."""
+"""Base entity for the MeatPi integration."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, Device
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, MANUFACTURER
 from .coordinator import WiCANDataUpdateCoordinator
 
 if TYPE_CHECKING:
@@ -38,8 +38,8 @@ class WiCANEntity(CoordinatorEntity[WiCANDataUpdateCoordinator]):
         self._attr_name = entity_description.key
         self._attr_device_info = DeviceInfo(
             connections={(DOMAIN, config_entry.entry_id)},
-            manufacturer="MeatPi",
-            model="WiCAN",
+            manufacturer=MANUFACTURER,
+            model=config_entry.runtime_data.device_profile.model,
             name=config_entry.title,
         )
 
@@ -82,11 +82,13 @@ class WiCANEntity(CoordinatorEntity[WiCANDataUpdateCoordinator]):
         # Use device_id or MAC as stable identifier (survives hostname changes)
         device_id = info.get("device_id") or self.config_entry.entry_id
 
-        # Build device info with MAC connection if available
+        # The device-reported hardware version is the most precise model
+        # string; fall back to the profile's display model until it arrives.
+        profile = self.config_entry.runtime_data.device_profile
         device_info = DeviceInfo(
             identifiers={(DOMAIN, device_id)},
-            manufacturer="MeatPi",
-            model=info.get("hw_version", "Unknown"),
+            manufacturer=profile.manufacturer,
+            model=info.get("hw_version") or profile.model,
             name=self.config_entry.title,
             sw_version=info.get("fw_version", "Unknown"),
             configuration_url=config_url,

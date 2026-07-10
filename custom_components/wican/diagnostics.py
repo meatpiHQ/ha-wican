@@ -41,6 +41,8 @@ async def async_get_config_entry_diagnostics(
             "options": dict(config_entry.options),
         },
         "device_info": {
+            "device_type": config_entry.data.get("device_type"),
+            "profile_model": config_entry.runtime_data.device_profile.model,
             "fw_version": config_entry.data.get("fw_version"),
             "hw_version": config_entry.data.get("hw_version"),
             "device_id": config_entry.data.get("device_id"),
@@ -48,6 +50,10 @@ async def async_get_config_entry_diagnostics(
             "mdns": config_entry.data.get("mdns"),
             "host": config_entry.data.get("host"),
             "ip": config_entry.data.get("ip"),
+        },
+        "capabilities": {
+            "api_level": config_entry.runtime_data.capabilities.api_level,
+            "components": sorted(config_entry.runtime_data.capabilities.components),
         },
         "runtime_data": {
             "webhook_id": "**REDACTED**",

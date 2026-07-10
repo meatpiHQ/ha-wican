@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ha-wican"
-version = "1.0.0"
-description = "Home Assistant integration for WiCAN device"
+version = "2.1.0"
+description = "Home Assistant integration for MeatPi devices (WiCAN, ESPNetlink, ...)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "MeatPi Electronics", email = "info@meatpi.com"}
 ]
-keywords = ["homeassistant", "wican", "can-bus", "automotive"]
+keywords = ["homeassistant", "meatpi", "wican", "espnetlink", "can-bus", "automotive"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

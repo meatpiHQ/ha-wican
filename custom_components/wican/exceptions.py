@@ -25,6 +25,19 @@ class WiCANDataError(WiCANError):
     """Exception raised when data from device is invalid or malformed."""
 
 
+class MeatPiApiError(WiCANError):
+    """Exception raised when a device HTTP API request fails."""
+
+
+class MeatPiApiConnectionError(MeatPiApiError):
+    """The device could not be reached at all (transport error or timeout).
+
+    Distinguished from plain MeatPiApiError (an HTTP-level failure from a
+    reachable device) so the capability probe can keep last-known-good
+    capabilities when a device is merely asleep or offline.
+    """
+
+
 class WiCANFirmwareError(WiCANError):
     """Base exception for firmware update errors."""
 

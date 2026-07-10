@@ -73,8 +73,10 @@ rules:
 
   # Silver
   action-exceptions:
-    status: exempt
-    comment: No service actions.
+    status: done
+    comment: >
+      Button presses (restart, sync time) raise translated HomeAssistantError
+      on API failure or when the control API is unavailable.
   config-entry-unloading:
     status: done
     comment: async_unload_entry unregisters webhook and unloads platforms.
@@ -98,15 +100,18 @@ rules:
       subsequent recovery once each.
   parallel-updates:
     status: done
-    comment: Set on sensor, binary_sensor, device_tracker, and update platforms.
+    comment: >
+      Set on sensor, binary_sensor, button, device_tracker, and update
+      platforms.
   reauthentication-flow:
     status: exempt
     comment: Device has no authentication.
   test-coverage:
     status: done
     comment: >
-      96.9% overall, 421 tests (config_flow.py, coordinator.py,
-      device_tracker.py, binary_sensor.py at 100%). Includes an end-to-end
+      97.1% overall, 512 tests (coordinator.py, device_tracker.py,
+      binary_sensor.py, button.py, api.py, devices.py at 100%). Includes an
+      end-to-end
       device simulator plus failure-injection suites (test_device_chaos.py,
       test_hardening.py) covering hostile payloads, floods, identity glitches,
       and lifecycle races.
@@ -133,7 +138,9 @@ rules:
     comment: README has a "Known limitations" section.
   docs-supported-devices:
     status: done
-    comment: README lists WiCAN OBD-II / Pro / USB support.
+    comment: >
+      README lists WiCAN OBD-II / Pro / USB plus upcoming ESPNetlink and the
+      generic MeatPi device contract (notes/ADDING_A_DEVICE.md).
   docs-supported-functions:
     status: done
     comment: README "Supported functionality" lists entities per platform.
@@ -158,8 +165,8 @@ rules:
   entity-translations:
     status: done
     comment: >
-      All static entities (sensor, binary_sensor, device_tracker, update) use
-      translation_key with translated names. Dynamic PID sensors are named
+      All static entities (sensor, binary_sensor, button, device_tracker,
+      update) use translation_key with translated names. Dynamic PID sensors are named
       from device-provided OBD-II keys that are unknown ahead of time and
       therefore cannot be pre-translated (documented limitation).
   exception-translations:
@@ -168,13 +175,15 @@ rules:
       All user-facing raised HomeAssistantError/ConfigEntryError use
       translation_domain + translation_key with matching entries under
       exceptions (device_mismatch, connection_error, wican_error, firmware
-      download/upload/version, update_in_progress, device_unreachable).
+      download/upload/version, update_in_progress, device_unreachable,
+      api_not_available, api_command_failed).
   icon-translations:
     status: done
     comment: >
-      Static sensor/binary_sensor entities use icons.json. Dynamic PID sensors
-      use runtime device_class-derived icons (keys unknown ahead of time);
-      device_tracker uses a single fixed icon.
+      Static sensor/binary_sensor/button entities use icons.json (the restart
+      button inherits its device-class icon). Dynamic PID sensors use runtime
+      device_class-derived icons (keys unknown ahead of time); device_tracker
+      uses a single fixed icon.
   reconfiguration-flow:
     status: done
     comment: async_step_reconfigure updates host/mDNS and reloads the entry.

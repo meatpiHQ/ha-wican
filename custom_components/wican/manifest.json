@@ -1,17 +1,20 @@
 {
     "domain": "wican",
-    "name": "WiCAN",
-    "codeowners": ["@jay-oswald"],
+    "name": "MeatPi",
+    "codeowners": ["@meatpiHQ", "@jay-oswald"],
     "config_flow": true,
     "dependencies": ["webhook"],
-    "documentation": "https://github.com/jay-oswald/ha-wican",
+    "documentation": "https://github.com/meatpiHQ/ha-wican",
     "integration_type": "device",
     "iot_class": "local_push",
-    "issue_tracker": "https://github.com/jay-oswald/ha-wican/issues",
-    "quality_scale": "bronze",
+    "issue_tracker": "https://github.com/meatpiHQ/ha-wican/issues",
+    "quality_scale": "platinum",
     "requirements": [],
-    "version": "1.0.1-beta1",
+    "version": "2.1.0",
     "zeroconf": [
+        {
+            "type": "_meatpi._tcp.local."
+        },
         {
             "type": "_wican._tcp.local."
         },

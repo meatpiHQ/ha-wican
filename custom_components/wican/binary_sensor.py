@@ -36,10 +36,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the binary sensor platform."""
-
+    profile = config_entry.runtime_data.device_profile
     async_add_entities(
         WiCANBinarySensorEntity(config_entry, description)
         for description in BINARY_SENSOR_DESCRIPTIONS
+        if profile.supports_obd_pids or not description.requires_obd
     )
 
 class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):

@@ -1,8 +1,15 @@
-"""Constants for the WiCAN integration."""
+"""Constants for the MeatPi integration."""
 
+# The Home Assistant domain is a permanent identifier: every existing config
+# entry, entity-registry row, and device identifier is keyed by it, so it
+# stays "wican" even though the integration is branded MeatPi (see
+# notes/MEATPI_INTEGRATION_PLAN.md, decision D1).
 DOMAIN = "wican"
 
+MANUFACTURER = "MeatPi"
+
 # Configuration
+CONF_DEVICE_TYPE = "device_type"
 CONF_POST_INTERVAL = "post_interval"
 DEFAULT_POST_INTERVAL = 15  # seconds
 MIN_POST_INTERVAL = 1
@@ -19,6 +26,34 @@ IP_CACHE_DURATION = 300  # 5 minutes in seconds
 
 # mDNS Resolution
 MDNS_RESOLUTION_TIMEOUT = 5  # seconds
+
+# Device HTTP API (firmware V6+). Telemetry stays webhook-push on every
+# firmware; these routes are the control/discovery surface of V6 devices.
+API_STATUS_PATH = "/api/status"
+API_SETTINGS_PATH = "/api/settings"
+API_RESTART_PATH = "/api/restart"
+API_RTC_SYNC_PATH = "/api/rtc/sync"
+API_PROBE_TIMEOUT = 10  # seconds per probe request
+API_REQUEST_TIMEOUT = 35  # seconds; /api/rtc/sync may block up to ~32 s
+
+# Bounds on device API responses. A healthy device is far below these; a
+# glitching or hostile one must not be able to balloon memory or the
+# capability set.
+MAX_API_RESPONSE_BYTES = 262144  # 256 KiB
+MAX_API_COMPONENTS = 128
+MAX_API_COMPONENT_NAME_LENGTH = 64
+
+# When the capability probe has never succeeded (device asleep/unreachable at
+# setup), retry it when telemetry pushes arrive — but at most this often.
+PROBE_RETRY_INTERVAL = 300  # seconds
+
+# Device API levels (capability probe result)
+API_LEVEL_LEGACY = 0  # webhook-only firmware (pre-V6)
+API_LEVEL_V6 = 6  # full /api/* HTTP surface
+
+# Dispatcher signal fired when a capability probe finishes; suffixed with
+# the entry_id so platforms of other entries never react.
+SIGNAL_CAPABILITIES_UPDATED = f"{DOMAIN}_capabilities_updated"
 
 # GPS / Location Tracking
 GPS_ACCURACY_THRESHOLD = 200  # meters - filter out low accuracy GPS fixes

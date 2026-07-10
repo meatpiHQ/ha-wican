@@ -150,7 +150,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         return body[:500] + "..." if len(body) > 500 else body
 
     async def async_install(
-        self, version: str | None, backup: bool, **kwargs: Any,
+        self, version: str | None, backup: bool, **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Install firmware update."""
         if self._update_in_progress:

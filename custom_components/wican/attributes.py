@@ -9,6 +9,9 @@ from homeassistant.const import EntityCategory
 @dataclass(frozen=True, kw_only=True)
 class WiCANBinarySensorEntityDescription(BinarySensorEntityDescription):
     extra_attributes: list[str] | None = field(default_factory=list)
+    requires_obd: bool = False
+    """Only create this entity on device types that poll a vehicle
+    (profile.supports_obd_pids); a GPS/LTE product has no ECU."""
 
 @dataclass(frozen=True, kw_only=True)
 class WiCANSensorEntityDescription(SensorEntityDescription):
@@ -59,6 +62,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
     WiCANBinarySensorEntityDescription(
         key="ecu_status",
         translation_key="ecu_status",
+        requires_obd=True,
         extra_attributes=[
             "obd_chip_status",
         ],

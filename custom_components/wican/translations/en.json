@@ -2,8 +2,8 @@
     "config": {
       "step": {
         "user": {
-          "title": "Set up WiCAN",
-          "description": "WiCAN devices are usually discovered automatically. Use manual setup only if automatic discovery failed.\n\nEnter the hostname or IP address of your WiCAN device.",
+          "title": "Set up MeatPi device",
+          "description": "MeatPi devices (WiCAN and future products) are usually discovered automatically. Use manual setup only if automatic discovery failed.\n\nEnter the hostname or IP address of your device.",
           "data": {
             "mdns": "Hostname or IP address",
             "host": "Alternative IP (optional)"
@@ -14,8 +14,8 @@
           }
         },
         "reconfigure": {
-          "title": "Reconfigure WiCAN",
-          "description": "Update the address Home Assistant uses to reach this WiCAN device.",
+          "title": "Reconfigure MeatPi device",
+          "description": "Update the address Home Assistant uses to reach this device.",
           "data": {
             "mdns": "Hostname or IP address",
             "host": "Alternative IP (optional)"
@@ -26,8 +26,8 @@
           }
         },
         "zeroconf_confirm": {
-          "title": "Discovered WiCAN device",
-          "description": "Do you want to add the WiCAN device **{name}** at `{url}` to Home Assistant?"
+          "title": "Discovered MeatPi device",
+          "description": "Do you want to add the MeatPi device **{name}** at `{url}` to Home Assistant?"
         }
       },
       "abort": {
@@ -69,6 +69,14 @@
           "name": "ECU Online"
         }
       },
+      "button": {
+        "restart": {
+          "name": "Restart"
+        },
+        "sync_time": {
+          "name": "Sync time"
+        }
+      },
       "device_tracker": {
         "location": {
           "name": "Location"
@@ -82,11 +90,17 @@
     },
     "issues": {
       "webhook_registration_failed": {
-        "title": "WiCAN device unreachable",
-        "description": "Home Assistant could not register its webhook with the WiCAN device \"{device}\" after several attempts (tried: {endpoints}).\n\nUntil this is resolved the device will not push updates. Please check that:\n\n1. The device is powered on and connected to the network.\n2. Home Assistant can reach the device at the address above.\n3. The device firewall allows connections on port 80.\n\nThe issue clears automatically once registration succeeds."
+        "title": "MeatPi device unreachable",
+        "description": "Home Assistant could not register its webhook with the device \"{device}\" after several attempts (tried: {endpoints}).\n\nUntil this is resolved the device will not push updates. Please check that:\n\n1. The device is powered on and connected to the network.\n2. Home Assistant can reach the device at the address above.\n3. The device firewall allows connections on port 80.\n\nThe issue clears automatically once registration succeeds."
       }
     },
     "exceptions": {
+      "api_not_available": {
+        "message": "The device control API is not available. The device may be offline or running firmware without HTTP API support."
+      },
+      "api_command_failed": {
+        "message": "Sending the command to the device failed: {error}"
+      },
       "device_mismatch": {
         "message": "Device ID mismatch. Expected {expected}, got {actual}. The device may have been replaced or the configuration points to a different device."
       },

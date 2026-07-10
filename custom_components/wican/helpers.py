@@ -61,7 +61,7 @@ def resolve_local_webhook_url(
             build_webhook_url(local_base, webhook_id),
             allowed_schemes={"http"},
         )
-    except NoURLAvailableError as original_error:
+    except NoURLAvailableError:
         if require_current_request:
             try:
                 current_request_base = get_url(
@@ -87,7 +87,7 @@ def resolve_local_webhook_url(
             except NoURLAvailableError:
                 pass
 
-        raise original_error
+        raise
 
 
 def resolve_external_webhook_url(hass: HomeAssistant, webhook_id: str) -> str:

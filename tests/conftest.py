@@ -12,6 +12,7 @@ from homeassistant.setup import async_setup_component
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.wican.api import LEGACY_CAPABILITIES
 from custom_components.wican.const import DOMAIN, CONF_POST_INTERVAL
 
 
@@ -23,6 +24,23 @@ pytest_plugins = "pytest_homeassistant_custom_component"
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable custom integrations for all tests."""
     yield
+
+
+@pytest.fixture(autouse=True)
+def mock_capability_probe() -> Generator[MagicMock]:
+    """Keep the device capability probe off the network in every test.
+
+    Patches the API client class as referenced by the integration setup
+    module, defaulting to legacy capabilities (probe finds no HTTP API) so
+    the hundreds of pre-existing tests behave exactly as before control
+    support. V6-control tests reconfigure ``async_probe.return_value``. The
+    real client class in custom_components.wican.api stays unpatched for
+    its own unit tests.
+    """
+    with patch("custom_components.wican.MeatPiApiClient") as client_cls:
+        client_cls.return_value = AsyncMock()
+        client_cls.return_value.async_probe.return_value = LEGACY_CAPABILITIES
+        yield client_cls
 
 
 @pytest.fixture

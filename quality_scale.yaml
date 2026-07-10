@@ -1,13 +1,15 @@
 # Home Assistant Integration Quality Scale
 # Documentation: https://developers.home-assistant.io/docs/integration_quality_scale_index/
 
-# WiCAN Integration Quality Scale Assessment
+# MeatPi Integration Quality Scale Assessment
+# (brand: MeatPi; devices: WiCAN OBD/USB/Pro, ESPNetlink upcoming;
+#  HA domain remains `wican` — see notes/MEATPI_INTEGRATION_PLAN.md D1)
 # Current: Gold (code complete; `brands` PR is the only external blocker)
 # Target: Platinum (strict typing done; hardening + coverage done)
 
-integration: wican
+integration: meatpi (brand)
 domain: wican
-version: "2.0.0"
+version: "2.1.0"
 assessed_date: "2026-07-10"
 
 # Quality Scale Levels:
@@ -68,10 +70,10 @@ silver:
       
     - requirement: "Tests with >90% coverage"
       status: compliant
-      notes: "96.9% code coverage, 421 passing tests (100% pass rate)"
-      coverage: 96.9
+      notes: "97.1% code coverage, 512 passing tests (100% pass rate)"
+      coverage: 97.1
       test_pass_rate: 100
-      evidence: "tests/ directory with 26 test files incl. device simulator and failure-injection suites"
+      evidence: "tests/ directory with 32 test files incl. multi-device-type simulator (DEVICE_PRESETS + SimulatedDeviceApi), failure-injection, device-type matrix, API-client, button, and migration suites"
       improvement_plan: "Maintained excellent coverage with comprehensive tests"
       
     - requirement: "Diagnostics support"
@@ -117,7 +119,7 @@ silver:
   assessment: passed
   notes: |
     All Silver requirements met. Integration is production-ready with excellent
-    architecture and code quality. Test coverage is 96.9% with 421 passing tests.
+    architecture and code quality. Test coverage is 97.1% with 512 passing tests.
     Integration follows modern HA patterns and best practices throughout.
 
 # ============================================================================
@@ -129,8 +131,8 @@ gold:
   requirements:
     - requirement: "Test coverage >95%"
       status: compliant
-      notes: "96.9% coverage, 421 passing tests (100% pass rate)"
-      current: 96.9
+      notes: "97.1% coverage, 512 passing tests (100% pass rate)"
+      current: 97.1
       target: 95
       evidence: |
         - coordinator.py, device_tracker.py, binary_sensor.py, config_flow.py,
@@ -186,7 +188,7 @@ gold:
 
   assessment: compliant
   notes: |
-    Gold requirements met with 96.9% test coverage. All architectural
+    Gold requirements met with 97.1% test coverage. All architectural
     requirements fully met. Integration demonstrates gold-level quality:
     - Modern DataUpdateCoordinator architecture
     - Comprehensive type hints throughout (mypy --strict clean)
@@ -197,7 +199,7 @@ gold:
     - Bounded growth: dynamic PID cap, sanitized config-entry writes
     - IP caching and coalesced webhook re-registration for performance
     - GPS location tracking with accuracy filtering
-    - 421 passing tests with 100% pass rate
+    - 512 passing tests with 100% pass rate
 
     Integration is production-ready and demonstrates exceptional gold-level quality in
     architecture, implementation, and test coverage. Ready for core submission.
@@ -219,7 +221,7 @@ platinum:
       
     - requirement: "Perfect test coverage (100%)"
       status: partial
-      notes: "96.9% coverage; remaining lines are rare exception paths"
+      notes: "97.1% coverage; remaining lines are rare exception paths"
       
     - requirement: "Comprehensive documentation"
       status: compliant
@@ -234,7 +236,7 @@ platinum:
 
 compliance_summary:
   bronze: "100% - All requirements met"
-  silver: "100% - All requirements met (96.9% coverage vs 90% target)"
+  silver: "100% - All requirements met (97.1% coverage vs 90% target)"
   gold: "100% of code rules - `brands` PR is the only external blocker"
   platinum: "strict-typing done; async-dependency + inject-websession done"
 
@@ -369,15 +371,18 @@ technical_compliance:
 
 testing:
   statistics:
-    total_tests: 421
-    passing: 421
+    total_tests: 512
+    passing: 512
     skipped: 0
     pass_rate: 100
-    code_coverage: 96.9
+    code_coverage: 97.1
 
   coverage_by_module:
+    api: 100
     binary_sensor: 100
-    config_flow: 100
+    button: 100
+    config_flow: 97.9
+    devices: 100
     const: 100
     coordinator: 100
     device_tracker: 100
@@ -390,7 +395,7 @@ testing:
     helpers: 98.9
     sensor: 97.7
     attributes: 95.5
-    init: 95.1
+    init: 95.3
     update: 87.9
 
   test_architecture:
@@ -400,7 +405,7 @@ testing:
     hardening_units: "tests/test_hardening.py - listener isolation, sanitizer edge types, lifecycle races"
 
   quality_gates:
-    - "pytest: 421 passed, coverage 96.9%"
+    - "pytest: 512 passed, coverage 97.1%"
     - "mypy --strict: 0 errors"
     - "ruff: clean on custom_components/wican"
 
@@ -416,20 +421,29 @@ integration_characteristics:
     - platform: sensor
       entities: "status + dynamic PID sensors"
       state_class: "measurement (latched per-PID once a numeric value is seen; text PIDs stay stateless)"
-      
+
     - platform: binary_sensor
       entities: "BLE, ECU, Sleep, VPN status"
       device_class: "connectivity"
+
+    - platform: button
+      entities: "Restart, Sync time"
+      notes: "Capability-gated: created only on devices whose HTTP-API probe finds the V6 control surface (Sync time additionally requires the rtc_manager component)"
       
   communication:
-    protocol: "HTTP webhooks"
-    direction: "push from device"
+    protocol: "HTTP webhooks (telemetry, all firmware) + device HTTP API (control/discovery, firmware V6+)"
+    direction: "push from device; control commands pushed to device on user action"
     local: true
     cloud: false
-    
+
+  device_framework:
+    profiles: "Declarative device-type profiles (devices.py): wican, wican_usb, wican_pro, espnetlink, generic meatpi fallback"
+    capabilities: "Runtime probe of /api/status + /api/settings gates control entities; legacy devices unaffected"
+    migration: "Config entries 1.1 → 1.2 backfill device_type from hw_version"
+
   discovery:
     method: "Zeroconf mDNS"
-    service_type: "_wican._tcp.local"
+    service_type: "_meatpi._tcp.local (all products) + _wican._tcp.local"
     fallback: "_http._tcp.local (legacy firmware)"
     automatic: true
     confirmation: "required after onboarding"
@@ -478,9 +492,9 @@ core_submission:
       impact: "Better UX for hostname changes"
       
     - priority: low
-      item: "Expand entity platforms (button, switch)"
+      item: "Expand control entities (switch/number via the capability framework; generic action buttons once the firmware exposes an invoke endpoint)"
       effort: "2-3 days"
-      impact: "More device control options"
+      impact: "More device control options (button platform shipped 2026-07-10)"
       
   recommendation: |
     Integration is production-ready and meets Silver level requirements with strong 
@@ -534,7 +548,7 @@ conclusion:
     strict typing, a hardened data path, and exhaustive testing.
 
     Key achievements:
-    - 96.9% test coverage, 421 tests, 100% pass rate
+    - 97.1% test coverage, 512 tests, 100% pass rate
     - mypy --strict clean (Platinum strict-typing rule)
     - Unbreakable data path: hostile/corrupt device data degrades gracefully,
       proven by a device simulator with failure-injection suites

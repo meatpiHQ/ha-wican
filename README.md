@@ -1,17 +1,25 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
-# WiCAN for Home Assistant
+# MeatPi for Home Assistant
 
-This is the official Home Assistant integration for [WiCAN by meatPi](https://github.com/meatpiHQ/wican-fw).
+This is the official Home Assistant integration for
+[MeatPi](https://www.meatpi.com/) devices — **MeatPi is the brand; WiCAN is a
+device**. Today it supports the WiCAN family of OBD-II CAN-bus adapters
+([firmware](https://github.com/meatpiHQ/wican-fw)); it is built as a generic
+multi-device integration so upcoming MeatPi products (such as **ESPNetlink**,
+an LTE + GPS gateway) plug into the same integration.
 
-WiCAN is an OBD-II CAN-bus adapter that reads data from your vehicle and pushes
-it to Home Assistant over your local network. The integration exposes that data
-as sensors (battery voltage, and any OBD-II PIDs you have configured on the
-device), tracks connection status, follows the vehicle's GPS location where
-supported, and can update the device firmware.
+WiCAN reads data from your vehicle and pushes it to Home Assistant over your
+local network. The integration exposes that data as sensors (battery voltage,
+and any OBD-II PIDs you have configured on the device), tracks connection
+status, follows the vehicle's GPS location where supported, updates the device
+firmware, and — on firmware V6+ — offers control buttons backed by the
+device's HTTP API.
 
 This integration is distributed via HACS and is not part of the default Home
-Assistant integrations.
+Assistant integrations. (Its internal Home Assistant domain remains `wican`
+for compatibility with existing installations; everything user-facing is
+MeatPi.)
 
 The documentation for the hardware itself (WiCAN OBD / WiCAN USB / WiCAN-Pro),
 including how to wire it up, configure protocols, and set up per-vehicle PIDs,
@@ -22,13 +30,16 @@ lives in the official [WiCAN device documentation](https://meatpihq.github.io/wi
 | Device | Supported | Notes |
 |---|---|---|
 | WiCAN OBD-II | ✅ | Connects to the vehicle's OBD-II port. |
-| WiCAN-Pro | ✅ | Adds support for multiple webhook URLs on firmware `v4.49+` (local HTTP + external HTTPS). |
+| WiCAN-Pro | ✅ | Adds support for multiple webhook URLs on firmware `v4.49+` (local HTTP + external HTTPS); firmware V6 adds the control HTTP API. |
 | WiCAN USB | ✅ | Same integration; requires network connectivity to Home Assistant. |
+| ESPNetlink | 🔜 | LTE + GPS gateway; profile is already in place, first-class entities land with the product firmware. |
+| Future MeatPi devices | ✅ (generic) | Any device implementing the MeatPi device contract (see `notes/ADDING_A_DEVICE.md`) works under a generic profile without an integration update. |
 
-The device must be running firmware with the **AutoPID** protocol enabled and be
-reachable from Home Assistant on the local network. Very old firmware without a
-MAC address / device ID in its mDNS advertisement is still supported but falls
-back to a hostname-based identifier.
+WiCAN devices must be running firmware with the **AutoPID** protocol enabled
+and be reachable from Home Assistant on the local network. Very old firmware
+without a MAC address / device ID in its mDNS advertisement is still supported
+but falls back to a hostname-based identifier. Devices on pre-V6 firmware keep
+the full telemetry feature set; V6 additionally enables control entities.
 
 ## Supported functionality
 
@@ -45,6 +56,7 @@ WiCAN adapter with the following entities:
 | `binary_sensor` | Bluetooth Enabled | Diagnostic BLE status. |
 | `device_tracker` | Location | GPS location of the device/vehicle, where GPS data is available. |
 | `update` | Firmware | Shows available WiCAN firmware from GitHub and installs it over the air. |
+| `button` | Restart, Sync time | Control buttons backed by the device HTTP API. Created automatically on firmware V6+ devices (Sync time requires the RTC component); not shown on older firmware. |
 
 Dynamic PID sensors are named from the raw OBD-II keys provided by the device,
 because those keys are only known at runtime (see
@@ -75,15 +87,15 @@ if Home Assistant cannot register its webhook on the device at all.
 ### Install via HACS
 1. Add this repository to HACS as a custom repository
    ([guide](https://www.hacs.xyz/docs/faq/custom_repositories/)):
-   - Repository URL: `https://github.com/jay-oswald/ha-wican`
+   - Repository URL: `https://github.com/meatpiHQ/ha-wican`
    - Type: `Integration`
-2. Download the WiCAN integration in HACS.
+2. Download the MeatPi (WiCAN) integration in HACS.
 3. Restart Home Assistant.
 4. Continue with **Configuration** below.
 
 ### Install via My Home Assistant
 1. Use this link:
-   [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jay-oswald&repository=ha-wican&category=integration)
+   [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=meatpiHQ&repository=ha-wican&category=integration)
 2. Restart Home Assistant.
 3. Continue with **Configuration** below.
 
@@ -219,10 +231,21 @@ reload the integration in Home Assistant.
 This integration follows standard Home Assistant removal:
 
 1. Go to *Settings → Devices & Services*.
-2. Select the **WiCAN** integration, open the device's menu, and choose
+2. Select the **MeatPi** integration, open the device's menu, and choose
    **Delete**.
-3. Repeat for any additional WiCAN devices.
+3. Repeat for any additional devices.
 
 Removing the config entry unregisters the Home Assistant webhook and removes all
 entities. Optionally, open the WiCAN device's web UI and disable its webhook
 (Settings → Services → Automation → Webhooks) so it stops sending data.
+
+## For developers
+
+The integration is a generic MeatPi device framework: device types are
+declarative profiles, telemetry is webhook push on every firmware, and
+control/discovery uses the device HTTP API (firmware V6+) when present.
+
+- Architecture and design decisions: [notes/MEATPI_INTEGRATION_PLAN.md](notes/MEATPI_INTEGRATION_PLAN.md)
+- Adding a new MeatPi device (integration + firmware contract): [notes/ADDING_A_DEVICE.md](notes/ADDING_A_DEVICE.md)
+- Requested firmware API changes: [notes/FIRMWARE_API_FEEDBACK.md](notes/FIRMWARE_API_FEEDBACK.md)
+- Device HTTP API (firmware V6): [notes/HTTP_API.md](notes/HTTP_API.md)
