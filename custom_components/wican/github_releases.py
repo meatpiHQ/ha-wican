@@ -26,16 +26,97 @@ _LOGGER = logging.getLogger(__name__)
 
 UPDATE_INTERVAL = timedelta(seconds=GITHUB_RELEASES_UPDATE_INTERVAL)
 
+# WiCAN firmware ships in three hardware streams, distinguished by the
+# version-tag suffix letter: v4.45p (PRO), v4.13u (USB), v4.46 (OBD).
+STREAM_PRO = "pro"
+STREAM_USB = "usb"
+STREAM_OBD = "obd"
+
+
+def hardware_stream(hw_version: Any) -> str:
+    """Classify a device's hardware version string into a firmware stream."""
+    hw = str(hw_version or "").lower()
+    if "pro" in hw:
+        return STREAM_PRO
+    if "usb" in hw:
+        return STREAM_USB
+    return STREAM_OBD
+
+
+def release_stream(release: dict[str, Any]) -> str:
+    """Classify a GitHub release into a firmware stream.
+
+    The tag suffix letter is authoritative (v4.45p / v4.13u / v4.46);
+    the release name is the fallback. A bare substring match on "p"
+    would misclassify tags like v4.50-patch1 as PRO.
+    """
+    tag = str(release.get("tag_name") or "").strip().lower()
+    tag = tag.removeprefix("v")
+    if tag.endswith("p"):
+        return STREAM_PRO
+    if tag.endswith("u"):
+        return STREAM_USB
+    name = str(release.get("name") or "").lower()
+    if "pro" in name:
+        return STREAM_PRO
+    if "usb" in name:
+        return STREAM_USB
+    return STREAM_OBD
+
+
+def _has_bin_asset(assets: list[Any], stream: str) -> bool:
+    """True when the asset list carries a firmware .bin for the stream.
+
+    Mirrors the device firmware naming: wican-fw_obd_pro_vXXXp.bin (PRO),
+    wican-fw_usb_vXXXu.bin (USB), wican-fw_obd_vXXX.bin (OBD).
+    """
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        name = str(asset.get("name") or "").lower()
+        if not name.endswith(".bin"):
+            continue
+        has_pro = "pro" in name
+        has_usb = "usb" in name and not has_pro
+        has_obd = "obd" in name and not has_usb and not has_pro
+        if (
+            (stream == STREAM_PRO and has_pro)
+            or (stream == STREAM_USB and has_usb)
+            or (stream == STREAM_OBD and has_obd)
+        ):
+            return True
+    return False
+
+
+def release_matches_stream(release: dict[str, Any], stream: str) -> bool:
+    """True when a release can serve a device of the given stream.
+
+    PRO firmware ships in dedicated releases (tag suffix p / PRO name).
+    OBD and USB devices share the standard releases: a release like
+    v4.13 carries both an OBD and a USB .bin, so their eligibility is
+    decided by the assets, falling back to the tag/name stream when the
+    release lists none. Offering a device a release with no installable
+    asset would surface a permanently uninstallable update.
+    """
+    if stream == STREAM_PRO:
+        return release_stream(release) == STREAM_PRO
+    if release_stream(release) == STREAM_PRO:
+        return False
+    assets = release.get("assets")
+    if isinstance(assets, list) and assets:
+        return _has_bin_asset(assets, stream)
+    return release_stream(release) == stream
+
 
 class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to fetch GitHub releases."""
 
-    def __init__(self, hass: HomeAssistant, is_pro: bool = False) -> None:
+    def __init__(self, hass: HomeAssistant, stream: str = STREAM_OBD) -> None:
         """Initialize the coordinator.
 
         Args:
             hass: Home Assistant instance.
-            is_pro: Whether this is for a WiCAN-PRO device.
+            stream: The device's firmware stream ("pro", "usb", or "obd").
 
         """
         super().__init__(
@@ -44,7 +125,20 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name="WiCAN GitHub Releases",
             update_interval=UPDATE_INTERVAL,
         )
-        self._is_pro = is_pro
+        self._stream = stream
+
+    def set_stream(self, stream: str) -> bool:
+        """Switch firmware stream; returns True when it changed.
+
+        A manually added entry has no hw_version until the device's first
+        push — the caller re-derives the stream when it learns it and
+        requests a refresh so the right release is offered without a
+        reload.
+        """
+        if stream == self._stream:
+            return False
+        self._stream = stream
+        return True
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch latest release from GitHub."""
@@ -64,31 +158,37 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 response.raise_for_status()
                 releases = await response.json()
 
+            # A proxy or captive portal can return 200 with a non-list
+            # body; treat any unexpected shape as a failed update.
+            if not isinstance(releases, list):
+                raise UpdateFailed(
+                    f"Unexpected GitHub response shape: {type(releases).__name__}",
+                )
+
             # Filter for latest non-prerelease
-            stable_releases = [r for r in releases if not r.get("prerelease", False)]
+            stable_releases = [
+                r
+                for r in releases
+                if isinstance(r, dict) and not r.get("prerelease", False)
+            ]
 
             if not stable_releases:
                 _LOGGER.warning("No stable releases found")
                 return {}
 
-            # Filter by device type (PRO vs standard)
-            # PRO releases have "PRO" in name or "P" in tag_name (case-insensitive)
-            def is_pro_release(release: dict[str, Any]) -> bool:
-                """Check if release is for WiCAN-PRO."""
-                name = str(release.get("name", "")).upper()
-                tag = str(release.get("tag_name", "")).upper()
-                return "PRO" in name or "P" in tag
-
+            # Keep only the releases this device can actually install
+            # (PRO / USB / OBD) so e.g. a USB device is never offered a
+            # newer OBD-only release — which has no USB asset to install.
             device_specific_releases = [
-                r for r in stable_releases
-                if is_pro_release(r) == self._is_pro
+                r
+                for r in stable_releases
+                if release_matches_stream(r, self._stream)
             ]
 
             if not device_specific_releases:
-                device_type = "PRO" if self._is_pro else "standard"
                 _LOGGER.warning(
-                    "No stable %s releases found (found %d releases for other type)",
-                    device_type,
+                    "No stable %s releases found (found %d releases for other streams)",
+                    self._stream.upper(),
                     len(stable_releases),
                 )
                 return {}
@@ -96,7 +196,7 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             latest = device_specific_releases[0]
             _LOGGER.debug(
                 "Latest %s release: %s",
-                "PRO" if self._is_pro else "standard",
+                self._stream.upper(),
                 latest.get("tag_name"),
             )
         except TimeoutError as err:

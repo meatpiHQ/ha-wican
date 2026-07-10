@@ -16,8 +16,12 @@ Design and constraints: notes/HISTORICAL_DATA_SYNC.md. Key invariants:
   current (incomplete) hour, are never imported.
 - Everything is bounded (rows, files, bytes, distinct PIDs, age window)
   so a glitching or hostile device cannot balloon memory or statistics.
-- The watermark only advances after a fully successful import, so an
-  interrupted sync simply re-runs; re-importing an hour is idempotent.
+- The watermark never passes data that was not durably imported: a
+  failed PID holds it at that PID's earliest failed hour, files beyond
+  the per-sync cap defer the newest (still ahead of the watermark), and
+  an hour cut short by the row cap is dropped rather than imported from
+  partial data. An interrupted sync simply re-runs; re-importing an
+  hour is idempotent.
 - A sync failure is contained: it never disturbs telemetry or control.
 """
 
@@ -204,6 +208,61 @@ def parse_csv(text: str) -> tuple[list[dict[str, Any]], int]:
     return rows, bad
 
 
+def _in_window(
+    ts: float, *, oldest: float, now_ts: float, current_hour: int,
+) -> bool:
+    """Sanity window: nothing older than the watermark/age limit, nothing
+    from the future (bad RTC), nothing in the current (incomplete,
+    live-recorded) hour. ``oldest`` is inclusive-start: a row exactly at
+    the watermark belongs to the first hour not yet imported."""
+    return oldest <= ts <= now_ts + HISTORY_FUTURE_SKEW and ts < current_hour
+
+
+def _discard_unfinished_hours(
+    remaining: list[Any],
+    buckets: dict[str, dict[int, _Bucket]],
+    result: HistorySyncResult,
+    *,
+    oldest: float,
+    now_ts: float,
+    current_hour: int,
+) -> None:
+    """Drop bucket hours that may be missing rows left beyond the row cap.
+
+    Any hour at or after the earliest unprocessed in-window row may hold
+    only part of its rows; importing it would freeze wrong mean/min/max
+    behind the watermark forever. Dropping the whole hour keeps it ahead
+    of the watermark, so the next sync re-fetches and imports it complete.
+    """
+    cutoff: int | None = None
+    for raw in remaining:
+        row = normalize_row(raw)
+        if row is None:
+            continue
+        ts = row[0]
+        if not _in_window(
+            ts, oldest=oldest, now_ts=now_ts, current_hour=current_hour,
+        ):
+            continue
+        hour = int(ts // 3600) * 3600
+        if cutoff is None or hour < cutoff:
+            cutoff = hour
+    if cutoff is None:
+        return
+    dropped = 0
+    for name in list(buckets):
+        pid_buckets = buckets[name]
+        for hour in [h for h in pid_buckets if h >= cutoff]:
+            del pid_buckets[hour]
+            dropped += 1
+        if not pid_buckets:
+            del buckets[name]
+    if dropped:
+        result.errors.append(
+            f"{dropped} hour bucket(s) cut short by the row cap deferred",
+        )
+
+
 def aggregate_rows(
     raw_rows: list[Any],
     *,
@@ -213,26 +272,35 @@ def aggregate_rows(
 ) -> dict[str, dict[int, _Bucket]]:
     """Aggregate raw rows into per-PID, per-hour buckets, bounded.
 
-    Rows outside (since, current-hour) or beyond the sanity window are
-    rejected. Returns {pid_name: {hour_epoch: bucket}}.
+    Rows outside [since, current-hour) or beyond the sanity window are
+    rejected. Returns {pid_name: {hour_epoch: bucket}}. When the row cap
+    is hit, hours the leftover rows could still touch are discarded so a
+    partially-aggregated hour is never imported.
     """
     current_hour = int(now_ts // 3600) * 3600
     oldest = max(since, now_ts - HISTORY_MAX_AGE_DAYS * 86400)
     buckets: dict[str, dict[int, _Bucket]] = {}
     used = 0
-    for raw in raw_rows:
+    for index, raw in enumerate(raw_rows):
         if used >= HISTORY_MAX_ROWS_PER_SYNC:
             result.errors.append("row cap reached; remaining rows deferred")
+            _discard_unfinished_hours(
+                raw_rows[index:],
+                buckets,
+                result,
+                oldest=oldest,
+                now_ts=now_ts,
+                current_hour=current_hour,
+            )
             break
         row = normalize_row(raw)
         if row is None:
             result.rows_rejected += 1
             continue
         ts, name, value = row
-        # Sanity window: nothing older than the watermark/age limit,
-        # nothing from the future (bad RTC), nothing in the current
-        # (incomplete, live-recorded) hour.
-        if ts <= oldest or ts > now_ts + HISTORY_FUTURE_SKEW or ts >= current_hour:
+        if not _in_window(
+            ts, oldest=oldest, now_ts=now_ts, current_hour=current_hour,
+        ):
             result.rows_rejected += 1
             continue
         pid_buckets = buckets.get(name)
@@ -335,15 +403,17 @@ class HistorySync:
                 continue
             candidates.append(name)
 
-        # Names embed the rotation epoch (dl_<epoch>.<ext>); newest last so
-        # the row cap drops the oldest data first when over budget.
+        # Names embed the rotation epoch (dl_<epoch>.<ext>); oldest first.
+        # Over the cap, the NEWEST files are the ones deferred: their rows
+        # stay ahead of the watermark and the next sync picks them up,
+        # whereas dropping the oldest would strand rows behind it forever.
         candidates.sort()
         if len(candidates) > HISTORY_MAX_FILES_PER_SYNC:
             result.errors.append(
                 f"{len(candidates) - HISTORY_MAX_FILES_PER_SYNC} log file(s) "
                 "beyond the per-sync cap were deferred",
             )
-            candidates = candidates[-HISTORY_MAX_FILES_PER_SYNC:]
+            candidates = candidates[:HISTORY_MAX_FILES_PER_SYNC]
         return candidates
 
     async def _async_fetch_files(
@@ -493,21 +563,31 @@ class HistorySync:
         buckets: dict[str, dict[int, _Bucket]],
         existing_hours: dict[str, set[int]],
         result: HistorySyncResult,
-    ) -> float:
-        """Import per-PID hourly buckets; return the newest imported hour end.
+    ) -> tuple[float, float | None]:
+        """Import per-PID hourly buckets.
+
+        Returns ``(max_imported_ts, failed_floor)``: the newest imported
+        hour end, and the earliest hour whose import *failed* (None when
+        every import succeeded). The watermark must never pass
+        ``failed_floor``, or the failed hours would be unrecoverable.
+        Permanently incompatible entities (sum-type statistics) do not
+        hold the watermark — retrying cannot fix them.
 
         Each PID is isolated: one failing import never blocks the others.
         Hours that already have live statistics are skipped (live wins).
         """
         max_imported_ts = 0.0
+        failed_floor: float | None = None
         for name, (entity_id, unit) in resolved.items():
             taken = existing_hours.get(entity_id, set())
+            pending: list[int] = []
             statistics = []
             skipped_hours = 0
             for hour, bucket in sorted(buckets[name].items()):
                 if hour in taken:
                     skipped_hours += 1
                     continue
+                pending.append(hour)
                 statistics.append(
                     {
                         "start": dt_util.utc_from_timestamp(hour),
@@ -532,12 +612,14 @@ class HistorySync:
                     "History sync: import failed for %s: %s", entity_id, err,
                 )
                 result.errors.append(f"{entity_id}: {err}")
+                if failed_floor is None or pending[0] < failed_floor:
+                    failed_floor = float(pending[0])
                 continue
             result.pids_imported += 1
             result.hours_imported += len(statistics)
             last_hour_end = max(hour for hour in buckets[name]) + 3600
             max_imported_ts = max(max_imported_ts, last_hour_end)
-        return max_imported_ts
+        return max_imported_ts, failed_floor
 
     async def _async_collect(
         self,
@@ -605,14 +687,20 @@ class HistorySync:
             result.errors.append(f"recorder query failed: {err}")
             return result
 
-        max_imported_ts = await self._async_import_buckets(
+        max_imported_ts, failed_floor = await self._async_import_buckets(
             resolved, buckets, existing_hours, result,
         )
 
-        if result.pids_imported and max_imported_ts > watermark:
-            result.watermark = max_imported_ts
+        new_watermark = max_imported_ts
+        if failed_floor is not None:
+            # A failed PID's hours must stay ahead of the watermark so
+            # the next sync re-fetches and re-imports them (idempotent).
+            new_watermark = min(new_watermark, failed_floor)
+
+        if result.pids_imported and new_watermark > watermark:
+            result.watermark = new_watermark
             try:
-                await self._async_save_watermark(max_imported_ts)
+                await self._async_save_watermark(new_watermark)
             except Exception as err:  # storage failure only re-syncs later
                 _LOGGER.warning("History sync: watermark save failed: %s", err)
                 result.errors.append(f"watermark save failed: {err}")

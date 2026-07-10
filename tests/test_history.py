@@ -177,6 +177,22 @@ def test_aggregate_rows_pid_cap() -> None:
     assert result.rows_rejected == HISTORY_MAX_PIDS_PER_SYNC
 
 
+def test_aggregate_row_cap_discards_partial_trailing_hour() -> None:
+    """Hitting the row cap drops hours the leftover rows could touch.
+
+    Complete hours before the cut are kept; the hour cut short mid-way
+    is deferred whole, so it is never imported from partial data.
+    """
+    result = HistorySyncResult()
+    rows = [{"ts": H1 + i, "name": "SOC", "value": 1} for i in range(3)]
+    rows += [{"ts": H2 + i, "name": "SOC", "value": 1} for i in range(3)]
+    with patch("custom_components.wican.history.HISTORY_MAX_ROWS_PER_SYNC", 4):
+        buckets = aggregate_rows(rows, since=0, now_ts=NOW, result=result)
+    assert buckets["SOC"][H1].count == 3
+    assert H2 not in buckets["SOC"]
+    assert any("cut short" in e for e in result.errors)
+
+
 # ---------------------------------------------------------------------------
 # File selection
 # ---------------------------------------------------------------------------
@@ -202,7 +218,13 @@ def test_select_log_files_filters_and_caps() -> None:
 
 
 def test_select_log_files_defers_beyond_cap() -> None:
-    """More files than the per-sync cap keeps the newest, notes the rest."""
+    """More files than the per-sync cap keeps the OLDEST, defers the newest.
+
+    Deferring the newest is self-healing: their rows stay ahead of the
+    watermark and the next sync picks them up. Keeping the newest instead
+    would advance the watermark past the dropped oldest files, losing
+    their rows forever.
+    """
     result = HistorySyncResult()
     entries = [
         {"name": f"dl_{1000 + i}.jsonl", "dir": False, "size": 5}
@@ -210,7 +232,8 @@ def test_select_log_files_defers_beyond_cap() -> None:
     ]
     selected = HistorySync._select_log_files(entries, None, result)
     assert len(selected) == HISTORY_MAX_FILES_PER_SYNC
-    assert selected[-1] == f"dl_{1000 + HISTORY_MAX_FILES_PER_SYNC + 9}.jsonl"
+    assert selected[0] == "dl_1000.jsonl"
+    assert selected[-1] == f"dl_{1000 + HISTORY_MAX_FILES_PER_SYNC - 1}.jsonl"
     assert any("deferred" in e for e in result.errors)
 
 
@@ -464,6 +487,84 @@ async def test_sync_per_pid_isolation(
     assert result.pids_imported == 1
     assert len(calls) == 2
     assert result.errors
+
+
+async def test_sync_watermark_held_at_failed_pid_hours(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_recorder_calls: dict[str, MagicMock],
+) -> None:
+    """A failed PID's hours stay ahead of the watermark and recover.
+
+    Regression: the watermark used to advance to the newest hour any PID
+    imported, stranding a failed PID's rows behind it — silent permanent
+    loss of that PID's offline history.
+    """
+    entry = await _entry_with_api(hass, mock_config_entry, pids=("SOC", "RPM"))
+    rows = [
+        {"ts": H1 + 60, "name": "SOC", "value": 70},
+        {"ts": H2 + 60, "name": "SOC", "value": 72},
+        {"ts": H1 + 90, "name": "RPM", "value": 900},
+    ]
+    entry.runtime_data.api.async_export_log_rows = _export_rows(rows)
+
+    def _fail_rpm(hass_arg: Any, metadata: dict, statistics: list) -> None:
+        if metadata["statistic_id"].endswith("rpm"):
+            raise ValueError("simulated import failure")
+
+    mock_recorder_calls["import"].side_effect = _fail_rpm
+
+    result = await async_sync_history(hass, entry)
+
+    assert result.pids_imported == 1
+    # SOC imported through H2, but the watermark holds at H1 where RPM
+    # failed — not at H2 + 3600.
+    assert result.watermark == H1
+
+    # The next sync re-fetches from the failed hour and recovers RPM.
+    mock_recorder_calls["import"].side_effect = None
+    mock_recorder_calls["import"].reset_mock()
+    entry.runtime_data.api.async_export_log_rows = _export_rows(rows)
+
+    result2 = await async_sync_history(hass, entry)
+
+    imported_ids = [
+        call.args[1]["statistic_id"]
+        for call in mock_recorder_calls["import"].call_args_list
+    ]
+    assert any(sid.endswith("rpm") for sid in imported_ids)
+    assert result2.watermark == H2 + 3600
+
+
+async def test_sync_row_cap_partial_hour_recovers_next_run(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_recorder_calls: dict[str, MagicMock],
+) -> None:
+    """An hour cut short by the row cap is deferred and imported next run.
+
+    Regression: the partial hour used to be imported and frozen behind
+    the watermark with a wrong mean/min/max forever.
+    """
+    entry = await _entry_with_api(hass, mock_config_entry)
+    rows = [{"ts": H1 + 10 * i, "name": "SOC", "value": i} for i in range(3)]
+    rows += [{"ts": H2 + 10 * i, "name": "SOC", "value": i} for i in range(3)]
+    entry.runtime_data.api.async_export_log_rows = _export_rows(rows)
+
+    with patch("custom_components.wican.history.HISTORY_MAX_ROWS_PER_SYNC", 4):
+        result = await async_sync_history(hass, entry)
+
+    # Only the complete hour H1 imported; watermark parked at H2.
+    assert result.hours_imported == 1
+    assert result.watermark == H2
+
+    entry.runtime_data.api.async_export_log_rows = _export_rows(rows)
+    mock_recorder_calls["import"].reset_mock()
+
+    result2 = await async_sync_history(hass, entry)
+
+    assert result2.hours_imported == 1
+    assert result2.watermark == H2 + 3600
 
 
 async def test_sync_export_cursor_stall_stops(

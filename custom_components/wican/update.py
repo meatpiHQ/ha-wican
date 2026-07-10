@@ -35,6 +35,7 @@ from .exceptions import (
     FirmwareUploadError,
     FirmwareVersionNotFoundError,
 )
+from .github_releases import hardware_stream, release_matches_stream
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -247,14 +248,15 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                 response.raise_for_status()
                 releases = await response.json()
 
-            # Determine device type for filtering
-            hw_version = str(self.config_entry.data.get("hw_version") or "").lower()
-            is_pro = "pro" in hw_version
+            # Determine the device's firmware stream for filtering
+            device_stream = hardware_stream(self.config_entry.data.get("hw_version"))
 
             # Search for matching release
             # Version can have suffixes in GitHub (4.45p, 4.13u) but we get normalized version
+            if not isinstance(releases, list):
+                releases = []
             for release in releases:
-                if release.get("prerelease", False):
+                if not isinstance(release, dict) or release.get("prerelease", False):
                     continue
 
                 tag_name = release.get("tag_name", "").lstrip("v")
@@ -264,12 +266,8 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                 if normalized_tag != version:
                     continue
 
-                # Check if this release is for the correct device type
-                name = str(release.get("name", "")).upper()
-                tag = str(tag_name).upper()
-                is_pro_release = "PRO" in name or "P" in tag
-
-                if is_pro_release == is_pro:
+                # Check if this release can serve the device's stream
+                if release_matches_stream(release, device_stream):
                     _LOGGER.info(
                         "Found GitHub release %s for version %s",
                         tag_name,

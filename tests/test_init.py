@@ -122,6 +122,41 @@ async def test_webhook_device_identity_mismatch(
     assert entry.data.get("device_id") == "test_device_123"
 
 
+async def test_late_learned_hw_version_retargets_release_stream(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_webhook_data: dict,
+    hass_client,
+) -> None:
+    """PRO hardware revealed on first push retargets the release stream.
+
+    Regression: the releases coordinator's stream was frozen at setup from
+    entry.data["hw_version"], which a manually added device does not have
+    until its first webhook push — so a PRO device tracked the standard
+    (OBD) release stream until HA restart.
+    """
+    entry = init_integration
+    assert entry.runtime_data.github_coordinator._stream == "obd"
+
+    payload = dict(mock_webhook_data)
+    payload["status"] = {**payload["status"], "hw_version": "WiCAN PRO v2.0"}
+
+    client = await hass_client()
+    with patch(
+        "custom_components.wican.github_releases.GitHubReleasesCoordinator"
+        ".async_request_refresh",
+        new_callable=AsyncMock,
+    ) as mock_refresh:
+        resp = await client.post(
+            f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=payload,
+        )
+        await hass.async_block_till_done()
+
+    assert resp.status == 204
+    assert entry.runtime_data.github_coordinator._stream == "pro"
+    assert mock_refresh.await_count == 1
+
+
 async def test_entry_updated(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,

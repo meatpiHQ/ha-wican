@@ -16,6 +16,7 @@ Documentation for the MeatPi Home Assistant integration (HA domain:
 | [DEVICE_COMPATIBILITY_GUIDE.md](DEVICE_COMPATIBILITY_GUIDE.md) | The device-side contract as derived from integration source (Level 1 detail behind ADDING_A_DEVICE.md). |
 | [DEVICE_ENDPOINTS.md](DEVICE_ENDPOINTS.md) | Webhook-registration endpoint + push-payload reference (incl. the GPS section and WiCAN-Pro multi-URL behavior). |
 | [FIRMWARE_DEVICE_TYPES.md](FIRMWARE_DEVICE_TYPES.md) | WiCAN hardware variants and firmware-asset naming for the update entity. |
+| [ROBUSTNESS_AUDIT_2026-07.md](ROBUSTNESS_AUDIT_2026-07.md) | **The open robustness backlog.** Full 2026-07 audit: high-priority findings (fixed, with tests) plus the open medium/low backlog with file:line references. |
 
 ## Historical records (dated snapshots — do not update, superseded by the above)
 

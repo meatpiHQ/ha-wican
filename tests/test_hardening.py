@@ -7,6 +7,7 @@ edge types, lifecycle races — complementing the end-to-end scenarios in
 
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from http import HTTPStatus
 from typing import Any
@@ -304,3 +305,83 @@ async def test_registration_request_after_unload_is_a_noop(
 
     # runtime_data is gone; the request must simply return.
     await _async_request_webhook_registration(hass, entry)
+
+
+async def test_push_racing_unload_gets_503_and_no_error(
+    device: WiCANDeviceSimulator, hass: HomeAssistant,
+) -> None:
+    """A push whose body read is in flight during unload is dropped cleanly.
+
+    Regression: the handler resumed into deleted runtime_data and raised
+    AttributeError, which HA's webhook component swallowed while answering
+    200 — the device believed delivery succeeded and the push was lost.
+    A 503 makes the device retry after the reload.
+    """
+    await device.async_setup()
+    entry = device.entry
+
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    async def _slow_read(request):
+        entered.set()
+        await gate.wait()
+        return {"status": {"device_id": device.device_id, "uptime": "x"}}
+
+    with patch(
+        "custom_components.wican._async_read_webhook_json",
+        side_effect=_slow_read,
+    ):
+        push_task = asyncio.ensure_future(device.push({"ignored": True}))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+
+        # Unload while the handler is awaiting the body.
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        gate.set()
+        resp = await asyncio.wait_for(push_task, timeout=5)
+
+    assert resp.status == HTTPStatus.SERVICE_UNAVAILABLE
+
+
+async def test_unload_during_running_registration_is_clean(
+    device: WiCANDeviceSimulator, hass: HomeAssistant,
+) -> None:
+    """Unloading mid-registration neither raises nor re-runs the loop.
+
+    Regression: a registration attempt spanning an unload (retries and
+    backoff can take seconds against an offline device) re-entered
+    entry.runtime_data unguarded on the coalescing loop's trailing
+    iteration and raised AttributeError in a fire-and-forget task.
+    """
+    await device.async_setup()
+    entry = device.entry
+
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+    calls = 0
+
+    async def _blocked_register(*args, **kwargs) -> bool:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await gate.wait()
+        return False
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        side_effect=_blocked_register,
+    ):
+        reg_task = asyncio.ensure_future(
+            _async_request_webhook_registration(hass, entry),
+        )
+        await asyncio.wait_for(entered.wait(), timeout=5)
+
+        # A push requests another registration while one is running,
+        # then the entry is unloaded before the attempt finishes.
+        entry.runtime_data.registration_pending = True
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        gate.set()
+        await asyncio.wait_for(reg_task, timeout=5)
+
+    # The trailing re-run must not have happened after the unload.
+    assert calls == 1

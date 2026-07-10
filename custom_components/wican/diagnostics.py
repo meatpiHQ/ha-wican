@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_WEBHOOK_ID
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from . import WiCANConfigEntry
+
+# webhook_url embeds the webhook secret in its path; vpn_ip can be a
+# publicly routable address for the device.
+TO_REDACT = {CONF_WEBHOOK_ID, "webhook_url", "vpn_ip"}
 
 
 def _history_sync_diagnostics(config_entry: WiCANConfigEntry) -> dict[str, Any] | None:
@@ -39,9 +44,7 @@ async def async_get_config_entry_diagnostics(
     coordinator = config_entry.runtime_data.coordinator
 
     # Redact sensitive data
-    entry_data = dict(config_entry.data)
-    if CONF_WEBHOOK_ID in entry_data:
-        entry_data[CONF_WEBHOOK_ID] = "**REDACTED**"
+    entry_data = async_redact_data(dict(config_entry.data), TO_REDACT)
 
     # Collect all WiCAN entity states
     wican_entities = {}

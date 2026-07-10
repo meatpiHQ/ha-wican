@@ -9,7 +9,11 @@ from aiohttp import ClientError, ClientResponseError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.wican.github_releases import GitHubReleasesCoordinator
+from custom_components.wican.github_releases import (
+    GitHubReleasesCoordinator,
+    hardware_stream,
+    release_stream,
+)
 
 
 @pytest.fixture
@@ -84,16 +88,16 @@ def mock_github_releases_mixed():
 
 async def test_github_coordinator_initialization(hass: HomeAssistant) -> None:
     """Test GitHub releases coordinator initialization."""
-    coordinator = GitHubReleasesCoordinator(hass, is_pro=False)
+    coordinator = GitHubReleasesCoordinator(hass, stream="obd")
 
     assert coordinator is not None
     assert coordinator.name == "WiCAN GitHub Releases"
     assert coordinator.update_interval.total_seconds() == 3600  # 1 hour
-    assert coordinator._is_pro is False
+    assert coordinator._stream == "obd"
 
     # Test PRO initialization
-    pro_coordinator = GitHubReleasesCoordinator(hass, is_pro=True)
-    assert pro_coordinator._is_pro is True
+    pro_coordinator = GitHubReleasesCoordinator(hass, stream="pro")
+    assert pro_coordinator._stream == "pro"
 
 
 async def test_fetch_latest_stable_release(
@@ -398,7 +402,7 @@ async def test_fetch_pro_releases_only(
     hass: HomeAssistant, mock_github_releases_mixed: list
 ) -> None:
     """Test that PRO coordinator only fetches PRO releases."""
-    coordinator = GitHubReleasesCoordinator(hass, is_pro=True)
+    coordinator = GitHubReleasesCoordinator(hass, stream="pro")
 
     with patch(
         "custom_components.wican.github_releases.async_get_clientsession"
@@ -423,7 +427,7 @@ async def test_fetch_standard_releases_only(
     hass: HomeAssistant, mock_github_releases_mixed: list
 ) -> None:
     """Test that standard coordinator only fetches standard releases."""
-    coordinator = GitHubReleasesCoordinator(hass, is_pro=False)
+    coordinator = GitHubReleasesCoordinator(hass, stream="obd")
 
     with patch(
         "custom_components.wican.github_releases.async_get_clientsession"
@@ -447,7 +451,7 @@ async def test_fetch_standard_releases_only(
 async def test_fetch_no_matching_device_type(hass: HomeAssistant) -> None:
     """Test when no releases match device type."""
     # PRO coordinator with only standard releases
-    coordinator = GitHubReleasesCoordinator(hass, is_pro=True)
+    coordinator = GitHubReleasesCoordinator(hass, stream="pro")
 
     standard_only_releases = [
         {
@@ -476,7 +480,7 @@ async def test_fetch_no_matching_device_type(hass: HomeAssistant) -> None:
 
 async def test_pro_detection_case_insensitive(hass: HomeAssistant) -> None:
     """Test that PRO detection is case-insensitive."""
-    coordinator = GitHubReleasesCoordinator(hass, is_pro=True)
+    coordinator = GitHubReleasesCoordinator(hass, stream="pro")
 
     # Test various PRO naming conventions
     releases_with_various_pro_names = [
@@ -509,3 +513,136 @@ async def test_pro_detection_case_insensitive(hass: HomeAssistant) -> None:
         assert coordinator.data is not None
         # Should get first (latest) PRO release
         assert "4.45" in coordinator.data.get("tag_name", "")
+
+
+@pytest.mark.parametrize(
+    ("release", "expected"),
+    [
+        ({"tag_name": "v4.45p", "name": ""}, "pro"),
+        ({"tag_name": "v4.44P", "name": ""}, "pro"),
+        ({"tag_name": "v4.13u", "name": ""}, "usb"),
+        ({"tag_name": "v4.13U", "name": ""}, "usb"),
+        ({"tag_name": "v4.46", "name": ""}, "obd"),
+        # A bare "P"-substring match would misclassify this as PRO.
+        ({"tag_name": "v4.50-patch1", "name": "hotfix"}, "obd"),
+        # Name is the fallback when the tag carries no suffix.
+        ({"tag_name": "v4.45", "name": "WiCAN PRO Firmware"}, "pro"),
+        ({"tag_name": "", "name": "WiCAN USB build"}, "usb"),
+        ({"tag_name": None, "name": None}, "obd"),
+    ],
+)
+def test_release_stream_classification(release: dict, expected: str) -> None:
+    """A release's stream comes from the tag suffix letter, then the name."""
+    assert release_stream(release) == expected
+
+
+@pytest.mark.parametrize(
+    ("hw_version", "expected"),
+    [
+        ("WiCAN PRO v2.0", "pro"),
+        ("WiCAN-USB v1.4", "usb"),
+        ("v3.1", "obd"),
+        (None, "obd"),
+        ("", "obd"),
+    ],
+)
+def test_hardware_stream_classification(hw_version, expected: str) -> None:
+    """A device's hw_version string maps to its firmware stream."""
+    assert hardware_stream(hw_version) == expected
+
+
+async def test_usb_device_gets_usb_release(hass: HomeAssistant) -> None:
+    """A USB device is offered the USB stream's latest, not a newer OBD one.
+
+    Regression: USB releases were classified "standard" together with OBD
+    releases, so a USB device saw the newest OBD release — whose assets
+    contain no USB firmware, leaving a permanently offered, uninstallable
+    update.
+    """
+    coordinator = GitHubReleasesCoordinator(hass, stream="usb")
+    releases = [
+        {"tag_name": "v4.46", "name": "WiCAN Firmware v4.46", "prerelease": False},
+        {"tag_name": "v4.13u", "name": "WiCAN USB v4.13", "prerelease": False},
+    ]
+
+    with patch(
+        "custom_components.wican.github_releases.async_get_clientsession"
+    ) as mock_session:
+        mock_response = AsyncMock()
+        mock_response.json = AsyncMock(return_value=releases)
+        mock_response.raise_for_status = MagicMock()
+        mock_session.return_value.get = AsyncMock(return_value=mock_response)
+
+        await coordinator.async_refresh()
+
+    assert coordinator.data.get("tag_name") == "v4.13u"
+
+
+async def test_set_stream_reports_changes(hass: HomeAssistant) -> None:
+    """set_stream returns True only when the stream actually changes."""
+    coordinator = GitHubReleasesCoordinator(hass, stream="obd")
+    assert coordinator.set_stream("obd") is False
+    assert coordinator.set_stream("pro") is True
+    assert coordinator._stream == "pro"
+
+
+async def test_non_list_github_body_fails_gracefully(hass: HomeAssistant) -> None:
+    """An HTTP 200 with a non-list JSON body must not raise AttributeError.
+
+    A captive portal or proxy can answer 200 with a JSON object; that must
+    surface as a normal failed update, not an unhandled exception.
+    """
+    coordinator = GitHubReleasesCoordinator(hass, stream="obd")
+
+    with patch(
+        "custom_components.wican.github_releases.async_get_clientsession"
+    ) as mock_session:
+        mock_response = AsyncMock()
+        mock_response.json = AsyncMock(return_value={"message": "denied"})
+        mock_response.raise_for_status = MagicMock()
+        mock_session.return_value.get = AsyncMock(return_value=mock_response)
+
+        await coordinator.async_refresh()
+
+    assert coordinator.last_update_success is False
+
+
+async def test_usb_device_accepts_combined_release_with_usb_asset(
+    hass: HomeAssistant,
+) -> None:
+    """A standard release carrying a USB .bin serves USB devices too.
+
+    Real releases (e.g. v4.13) ship the OBD and USB firmware together
+    under an unsuffixed tag; eligibility is decided by the assets. A
+    newer OBD-only release must be skipped for USB devices.
+    """
+    coordinator = GitHubReleasesCoordinator(hass, stream="usb")
+    releases = [
+        {
+            "tag_name": "v4.46",
+            "name": "WiCAN v4.46",
+            "prerelease": False,
+            "assets": [{"name": "wican-fw_obd_v446.bin"}],
+        },
+        {
+            "tag_name": "v4.13",
+            "name": "WiCAN v4.13",
+            "prerelease": False,
+            "assets": [
+                {"name": "wican-fw_obd_v413.bin"},
+                {"name": "wican-fw_usb_v413u.bin"},
+            ],
+        },
+    ]
+
+    with patch(
+        "custom_components.wican.github_releases.async_get_clientsession"
+    ) as mock_session:
+        mock_response = AsyncMock()
+        mock_response.json = AsyncMock(return_value=releases)
+        mock_response.raise_for_status = MagicMock()
+        mock_session.return_value.get = AsyncMock(return_value=mock_response)
+
+        await coordinator.async_refresh()
+
+    assert coordinator.data.get("tag_name") == "v4.13"

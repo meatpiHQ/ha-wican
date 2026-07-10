@@ -56,6 +56,54 @@ async def test_setup_entry_webhook_id_generation_failure(hass: HomeAssistant) ->
     assert result is False
 
 
+async def test_setup_failure_after_webhook_register_allows_retry(
+    hass: HomeAssistant,
+) -> None:
+    """A failed setup unregisters its webhook so the retry can register it.
+
+    Regression: the webhook stayed registered when platform setup raised,
+    so the next setup attempt hit core's "Handler is already defined!"
+    ValueError — permanently wedging the entry until HA restart.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "mdns": "http://wican_test.local",
+            CONF_WEBHOOK_ID: "retry_webhook_id",
+        },
+        title="WiCAN Test",
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch.object(
+            hass.config_entries,
+            "async_forward_entry_setups",
+            side_effect=ImportError("simulated broken platform"),
+        ),
+    ):
+        result = await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert result is False
+    # The webhook must not linger after the failed setup.
+    assert "retry_webhook_id" not in hass.data.get("webhook", {})
+
+    # The retry (reload of an unloaded entry just loads it) must succeed.
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert "retry_webhook_id" in hass.data.get("webhook", {})
+
+
 async def test_setup_entry_uses_custom_post_interval(hass: HomeAssistant) -> None:
     """Test setup uses custom post interval from options."""
     custom_interval = 30

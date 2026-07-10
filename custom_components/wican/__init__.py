@@ -49,7 +49,7 @@ from .const import (
 from .coordinator import WiCANDataUpdateCoordinator
 from .devices import WICAN_FAMILY_TYPES, get_profile, infer_device_type
 from .exceptions import WiCANWebhookError
-from .github_releases import GitHubReleasesCoordinator
+from .github_releases import GitHubReleasesCoordinator, hardware_stream
 from .helpers import resolve_device_webhook_urls
 from .history import async_remove_history_store, async_sync_history
 from .models import WiCANRuntimeData
@@ -410,6 +410,22 @@ def _merge_device_fields(
     return new_data, data_changed, connection_field_changed
 
 
+def _retarget_release_stream(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    hw_version: Any,
+) -> None:
+    """Point the releases coordinator at a late-learned hardware stream.
+
+    A manually added device reveals its hw_version on the first push;
+    e.g. a PRO device must switch from the standard to the PRO firmware
+    stream — and get the right update offered — without an entry reload.
+    """
+    github = entry.runtime_data.github_coordinator
+    if github.set_stream(hardware_stream(hw_version)):
+        hass.async_create_task(github.async_request_refresh())
+
+
 def _persist_device_reported_info(
     hass: HomeAssistant,
     entry: WiCANConfigEntry,
@@ -456,6 +472,10 @@ def _persist_device_reported_info(
             entry.runtime_data.device_profile = get_profile(inferred_type)
 
     hass.config_entries.async_update_entry(entry, data=new_data)
+
+    if "hw_version" in device_info_fields:
+        _retarget_release_stream(hass, entry, new_data.get("hw_version"))
+
     if connection_field_changed:
         entry.runtime_data.device_host = new_data.get("host") or entry.runtime_data.device_host
         entry.runtime_data.device_ip = new_data.get("ip") or entry.runtime_data.device_ip
@@ -593,11 +613,12 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         entry,
     )
 
-    # Determine if this is a WiCAN-PRO device
-    hw_version = entry.data.get("hw_version", "").lower()
-    is_pro = "pro" in hw_version
-
-    github_coordinator = GitHubReleasesCoordinator(hass, is_pro=is_pro)
+    # Track the firmware stream matching this device's hardware (PRO /
+    # USB / OBD). A manually added entry may not know its hw_version yet;
+    # _persist_device_reported_info re-derives the stream on first push.
+    github_coordinator = GitHubReleasesCoordinator(
+        hass, stream=hardware_stream(entry.data.get("hw_version")),
+    )
     try:
         await github_coordinator.async_config_entry_first_refresh()
     except Exception as err:
@@ -631,7 +652,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         )
         # Don't fail setup - entities will update when first webhook arrives
 
-    async def handle_webhook(
+    async def handle_webhook(  # noqa: PLR0911
         hass: HomeAssistant,
         webhook_id: str,
         request: Request,
@@ -668,6 +689,20 @@ async def async_setup_entry(  # noqa: C901, PLR0915
             return Response(
                 text="Invalid JSON body",
                 status=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
+
+        # The entry can be unloaded while the body read above was awaited
+        # (runtime_data is deleted on unload). Everything below runs
+        # synchronously, so this single re-check makes the whole handler
+        # unload-safe: answer 503 so the device retries after the reload
+        # instead of believing the push was delivered.
+        if getattr(entry, "runtime_data", None) is None:
+            _LOGGER.debug(
+                "Dropping webhook push that raced an unload of %s", entry.title,
+            )
+            return Response(
+                text="Integration reloading",
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
 
         # WiCAN always sends a JSON object. Reject anything else defensively so a
@@ -731,19 +766,28 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         hass, DOMAIN, entry.title, webhook_id, handle_webhook,
     )
 
-    # Normalize host/mdns schemes BEFORE scheduling registration
-    # to avoid triggering update listener which would cause duplicate registrations
-    _normalize_connection_urls(hass, entry)
+    try:
+        # Normalize host/mdns schemes BEFORE scheduling registration
+        # to avoid triggering update listener which would cause duplicate
+        # registrations
+        _normalize_connection_urls(hass, entry)
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    _schedule_webhook_registration(hass, entry)
+        _schedule_webhook_registration(hass, entry)
 
-    # Discover the device's control capabilities (V6 HTTP API) out-of-band.
-    # A legacy or unreachable device simply keeps legacy capabilities.
-    hass.async_create_task(_async_request_capability_probe(hass, entry))
+        # Discover the device's control capabilities (V6 HTTP API)
+        # out-of-band. A legacy or unreachable device simply keeps legacy
+        # capabilities.
+        hass.async_create_task(_async_request_capability_probe(hass, entry))
 
-    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+        entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    except Exception:
+        # A failed setup must leave no webhook behind: HA retries setup,
+        # and core raises "Handler is already defined!" on a duplicate
+        # register — which would wedge the entry until restart.
+        webhook.async_unregister(hass, webhook_id)
+        raise
 
     return True
 
@@ -1046,6 +1090,12 @@ async def _async_request_webhook_registration(
         while runtime.registration_pending:
             runtime.registration_pending = False
             await _async_register_webhook_on_device(hass, entry)
+            # A registration attempt can span seconds (retries, backoff);
+            # if the entry was unloaded or reloaded meanwhile this loop's
+            # lifecycle is over — a new setup schedules its own run.
+            current_runtime: Any = getattr(entry, "runtime_data", None)
+            if current_runtime is not runtime:
+                return
     finally:
         runtime.registration_running = False
 
@@ -1056,14 +1106,22 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
     max_retries: int = WEBHOOK_MAX_RETRIES,
 ) -> bool:
     """Push webhook URL and interval to the WiCAN device with retry."""
+    # Hold a local reference: the entry can be unloaded while this
+    # function awaits (runtime_data is deleted on unload), and writing
+    # to a stale runtime object is harmless while re-reading the entry
+    # attribute would raise.
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return False
+
     # Prefer direct IP/host if available (similar to WLED), fallback to mDNS
-    host = entry.runtime_data.device_host or entry.data.get("host")
-    ip = entry.runtime_data.device_ip or entry.data.get("ip")
+    host = runtime.device_host or entry.data.get("host")
+    ip = runtime.device_ip or entry.data.get("ip")
     mdns = entry.data.get("mdns")
 
     if not host and ip:
         host = _http_url_from_host(ip)
-        entry.runtime_data.device_host = host
+        runtime.device_host = host
 
     if not host and not mdns:
         _LOGGER.debug(
@@ -1074,16 +1132,16 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
 
     # URLs already normalized during setup, just ensure runtime_data is updated
     if host:
-        entry.runtime_data.device_host = host
+        runtime.device_host = host
     elif ip and not host:
         # Derive host from IP if needed
         derived_host = _http_url_from_host(ip)
         if derived_host:
             host = derived_host
-            entry.runtime_data.device_host = derived_host
+            runtime.device_host = derived_host
 
     # Get post interval from runtime_data
-    post_interval = entry.runtime_data.post_interval
+    post_interval = runtime.post_interval
 
     try:
         payload = _build_webhook_payload(
@@ -1122,24 +1180,24 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
 
     # Check if we have a cached IP and it's still valid
     if (
-        entry.runtime_data.cached_resolved_ip
-        and entry.runtime_data.cache_timestamp
-        and (time.time() - entry.runtime_data.cache_timestamp) < IP_CACHE_DURATION
+        runtime.cached_resolved_ip
+        and runtime.cache_timestamp
+        and (time.time() - runtime.cache_timestamp) < IP_CACHE_DURATION
     ):
         cached_endpoint = _build_webhook_endpoint(
-            f"http://{entry.runtime_data.cached_resolved_ip}",
+            f"http://{runtime.cached_resolved_ip}",
         )
         if cached_endpoint:
             endpoints.append(cached_endpoint)
             _LOGGER.debug(
                 "Using cached IP %s (age: %.1fs)",
-                entry.runtime_data.cached_resolved_ip,
-                time.time() - entry.runtime_data.cache_timestamp,
+                runtime.cached_resolved_ip,
+                time.time() - runtime.cache_timestamp,
             )
 
     # Add host and mDNS as fallback, then the device-reported VPN tunnel
     # address (a car on the road via WireGuard/Tailscale).
-    vpn_url = _http_url_from_host(entry.runtime_data.device_vpn_ip)
+    vpn_url = _http_url_from_host(runtime.device_vpn_ip)
     for candidate in (host, mdns, vpn_url):
         endpoint = _build_webhook_endpoint(candidate)
         if endpoint:
@@ -1184,8 +1242,8 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
                                 # Extract IP from endpoint URL
                                 endpoint_host = ep.host
                                 if endpoint_host and not endpoint_host.endswith(".local"):
-                                    entry.runtime_data.cached_resolved_ip = endpoint_host
-                                    entry.runtime_data.cache_timestamp = time.time()
+                                    runtime.cached_resolved_ip = endpoint_host
+                                    runtime.cache_timestamp = time.time()
                                     _LOGGER.debug(
                                         "Cached resolved IP: %s",
                                         endpoint_host,
@@ -1273,15 +1331,25 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
         max_retries,
         endpoints_str,
     )
-    _raise_webhook_repair(hass, entry, endpoints_str)
+    # The retries above can outlive the entry (unload clears the repair
+    # issue); never raise one for an entry that is no longer this lifecycle.
+    if getattr(entry, "runtime_data", None) is runtime:
+        _raise_webhook_repair(hass, entry, endpoints_str)
     return False
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
     """Handle config entry updates (options) by re-registering the webhook."""
+    # The listener can fire while the entry is tearing down (runtime_data
+    # is deleted on unload); the reload that follows re-reads the options.
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return
+
     # Update post_interval in runtime_data
-    new_post_interval = entry.options.get(CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL)
-    entry.runtime_data.post_interval = new_post_interval
+    runtime.post_interval = entry.options.get(
+        CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL,
+    )
 
     # Re-register webhook with new interval (coalesced with any in-flight run)
     await _async_request_webhook_registration(hass, entry)

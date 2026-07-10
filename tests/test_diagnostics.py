@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -27,6 +28,36 @@ async def test_diagnostics_redacts_webhook_id(
     # Webhook ID should be redacted
     assert diagnostics["entry"]["data"][CONF_WEBHOOK_ID] == "**REDACTED**"
     assert diagnostics["runtime_data"]["webhook_id"] == "**REDACTED**"
+
+
+async def test_diagnostics_never_leaks_webhook_secret(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """The webhook secret must not appear ANYWHERE in the diagnostics dump.
+
+    Regression: entry.data also carries webhook_url, which embeds the
+    webhook secret in its path (/api/webhook/<id>), and vpn_ip, a
+    potentially publicly routable device address. Only webhook_id itself
+    was redacted, so a shared diagnostics file handed out push access.
+    """
+    entry = init_integration
+    webhook_id = entry.data[CONF_WEBHOOK_ID]
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            "webhook_url": f"http://ha.local:8123/api/webhook/{webhook_id}",
+            "vpn_ip": "100.64.0.7",
+        },
+    )
+    await hass.async_block_till_done()
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    serialized = json.dumps(diagnostics, default=str)
+    assert webhook_id not in serialized
+    assert "100.64.0.7" not in serialized
 
 
 async def test_diagnostics_includes_device_info(

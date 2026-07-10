@@ -29,14 +29,20 @@ BASE_URL = "http://wican_test.local:80"
 
 
 def test_aggregate_row_cap_defers_remainder() -> None:
-    """The per-sync row cap stops processing and notes the deferral."""
+    """The per-sync row cap stops processing and defers the partial hour.
+
+    The hour the cap lands in has only some of its rows aggregated;
+    importing it would freeze a wrong mean/min/max behind the watermark.
+    The whole hour is dropped so the next sync re-imports it complete.
+    """
     result = HistorySyncResult()
     rows = [{"ts": H1 + i, "name": "SOC", "value": i} for i in range(10)]
     with patch("custom_components.wican.history.HISTORY_MAX_ROWS_PER_SYNC", 3):
         buckets = aggregate_rows(rows, since=0, now_ts=NOW, result=result)
-    assert buckets["SOC"][H1].count == 3
+    assert buckets == {}
     assert result.rows_used == 3
     assert any("row cap" in e for e in result.errors)
+    assert any("cut short" in e for e in result.errors)
 
 
 async def test_export_pagination_follows_cursor(
