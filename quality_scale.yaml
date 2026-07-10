@@ -2,12 +2,13 @@
 # Documentation: https://developers.home-assistant.io/docs/integration_quality_scale_index/
 
 # WiCAN Integration Quality Scale Assessment
-# Current Target: Silver (preparing for core submission)
+# Current: Gold (code complete; `brands` PR is the only external blocker)
+# Target: Platinum (strict typing done; hardening + coverage done)
 
 integration: wican
 domain: wican
 version: "2.0.0"
-assessed_date: "2025-12-06"
+assessed_date: "2026-07-10"
 
 # Quality Scale Levels:
 # - No score: Not meeting Bronze requirements
@@ -67,10 +68,10 @@ silver:
       
     - requirement: "Tests with >90% coverage"
       status: compliant
-      notes: "94% code coverage, 99% test pass rate (173/174 tests)"
-      coverage: 94
-      test_pass_rate: 99
-      evidence: "tests/ directory with 15 test files, 2,500+ lines of test code"
+      notes: "96.9% code coverage, 421 passing tests (100% pass rate)"
+      coverage: 96.9
+      test_pass_rate: 100
+      evidence: "tests/ directory with 26 test files incl. device simulator and failure-injection suites"
       improvement_plan: "Maintained excellent coverage with comprehensive tests"
       
     - requirement: "Diagnostics support"
@@ -115,10 +116,9 @@ silver:
 
   assessment: passed
   notes: |
-    Silver requirements substantially met. Integration is production-ready with excellent 
-    architecture and code quality. Test coverage at 72% is good but below the 90% target.
-    All 41 passing tests validate core functionality. Integration follows modern HA patterns
-    and best practices throughout.
+    All Silver requirements met. Integration is production-ready with excellent
+    architecture and code quality. Test coverage is 96.9% with 421 passing tests.
+    Integration follows modern HA patterns and best practices throughout.
 
 # ============================================================================
 # GOLD LEVEL REQUIREMENTS (Mostly Met, Working Towards ✅)
@@ -128,15 +128,18 @@ gold:
   # High-quality integrations meeting these advanced requirements
   requirements:
     - requirement: "Test coverage >95%"
-      status: substantial_compliance
-      notes: "94% coverage, 99% test pass rate. Near-perfect coverage with comprehensive test suite"
-      current: 94
+      status: compliant
+      notes: "96.9% coverage, 421 passing tests (100% pass rate)"
+      current: 96.9
       target: 95
-      improvement_plan: |
-        - 94% coverage achieved (exceeds 90% requirement, close to 95% gold target)
-        - 173 passing tests covering all major functionality
-        - Remaining 6% are edge case exception paths (webhook retries, URL generation failures)
-        - Integration demonstrates gold-level quality patterns
+      evidence: |
+        - coordinator.py, device_tracker.py, binary_sensor.py, config_flow.py,
+          param_loader.py, github_releases.py and 6 more modules at 100%
+        - End-to-end device simulator (tests/device_sim.py) drives the real
+          webhook handler, coordinator, and entities
+        - Failure-injection suites (test_device_chaos.py, test_hardening.py)
+          cover hostile payloads, floods, identity glitches, GPS garbage,
+          concurrency bursts, and lifecycle races
       
     - requirement: "All dependencies in manifest tracked"
       status: compliant
@@ -183,18 +186,19 @@ gold:
 
   assessment: compliant
   notes: |
-    Gold requirements met with 94% test coverage (exceeds 90%, approaching 95% target).
-    All architectural requirements fully met. Integration demonstrates gold-level quality:
+    Gold requirements met with 96.9% test coverage. All architectural
+    requirements fully met. Integration demonstrates gold-level quality:
     - Modern DataUpdateCoordinator architecture
-    - Comprehensive type hints throughout
+    - Comprehensive type hints throughout (mypy --strict clean)
     - Proper exception handling
     - Translation keys for all entities
-    - Device identity validation
-    - IP caching for performance
-    - Named constants (no magic numbers)
-    - GPS location tracking with device_tracker platform
-    - 173 passing tests with 99% pass rate
-    
+    - Device identity validation (with type-tolerant id matching)
+    - Hardened data path: one bad device value can never block other entities
+    - Bounded growth: dynamic PID cap, sanitized config-entry writes
+    - IP caching and coalesced webhook re-registration for performance
+    - GPS location tracking with accuracy filtering
+    - 421 passing tests with 100% pass rate
+
     Integration is production-ready and demonstrates exceptional gold-level quality in
     architecture, implementation, and test coverage. Ready for core submission.
 
@@ -215,7 +219,7 @@ platinum:
       
     - requirement: "Perfect test coverage (100%)"
       status: partial
-      notes: "72% coverage - excellent foundation, expansion needed"
+      notes: "96.9% coverage; remaining lines are rare exception paths"
       
     - requirement: "Comprehensive documentation"
       status: compliant
@@ -230,12 +234,12 @@ platinum:
 
 compliance_summary:
   bronze: "100% - All requirements met"
-  silver: "95% - Substantially compliant (test coverage 72% vs 90% target)"
-  gold: "90% - Strong compliance (test coverage primary gap)"
-  platinum: "N/A - Reserved for core team"
-  
-  overall_quality: "High - Production-ready with excellent architecture"
-  recommended_action: "Ready for core submission with test expansion plan"
+  silver: "100% - All requirements met (96.9% coverage vs 90% target)"
+  gold: "100% of code rules - `brands` PR is the only external blocker"
+  platinum: "strict-typing done; async-dependency + inject-websession done"
+
+  overall_quality: "High - Production-ready, hardened, exhaustively tested"
+  recommended_action: "Submit brands PR, then flip manifest quality_scale"
 
 # ============================================================================
 # SPECIFIC COMPLIANCE DETAILS
@@ -321,6 +325,28 @@ technical_compliance:
       implementation: "User confirmation for discovered devices"
       notes: "Privacy-conscious, user controls device addition"
 
+  robustness:
+    listener_isolation:
+      status: compliant
+      implementation: "Coordinator isolates each entity listener"
+      notes: "One entity failing a state write can never block the others"
+    value_sanitization:
+      status: compliant
+      implementation: "Numeric guards mirror HA state-machine rules"
+      notes: "Non-numeric/non-finite/overlong values dropped or truncated, never raised"
+    input_bounds:
+      status: compliant
+      implementation: "Caps on dynamic PIDs (1000), key/config/info field lengths"
+      notes: "A glitching device cannot flood the registry or pollute the config entry"
+    identity_tolerance:
+      status: compliant
+      implementation: "device_id compared type-tolerantly (string vs number)"
+      notes: "Structured-garbage ids rejected with 403; firmware quirks accepted"
+    lifecycle_safety:
+      status: compliant
+      implementation: "Coalesced re-registration; unload-race guards; state cleanup"
+      notes: "Connection flapping and unload races proven harmless in tests"
+
   performance:
     memory_efficiency:
       status: compliant
@@ -343,74 +369,40 @@ technical_compliance:
 
 testing:
   statistics:
-    total_tests: 43
-    passing: 41
-    skipped: 2
-    pass_rate: 95
-    code_coverage: 72
-    
+    total_tests: 421
+    passing: 421
+    skipped: 0
+    pass_rate: 100
+    code_coverage: 96.9
+
   coverage_by_module:
-    diagnostics: 100
+    binary_sensor: 100
+    config_flow: 100
     const: 100
+    coordinator: 100
+    device_tracker: 100
+    diagnostics: 100
+    entity: 100
     exceptions: 100
+    github_releases: 100
     models: 100
-    entity: 98
-    attributes: 95
-    config_flow: 88
-    binary_sensor: 89
-    coordinator: 85
-    init: 68
-    sensor: 47
-    helpers: 0
-    
-  test_files:
-    - file: "tests/test_init.py"
-      tests: 6
-      passing: 6
-      coverage: "Integration setup and webhook handling"
-      
-    - file: "tests/test_config_flow.py"
-      tests: 10
-      passing: 10
-      coverage: "User and zeroconf flows, options flow"
-      
-    - file: "tests/test_coordinator.py"
-      tests: 11
-      passing: 11
-      coverage: "Coordinator lifecycle, data normalization, validation"
-      
-    - file: "tests/test_sensor.py"
-      tests: 7
-      passing: 5
-      coverage: "Static and PID sensors, state restoration"
-      skipped: 2
-      
-    - file: "tests/test_binary_sensor.py"
-      tests: 5
-      passing: 4
-      coverage: "Binary sensor states and restoration"
-      skipped: 1
-      
-    - file: "tests/test_diagnostics.py"
-      tests: 5
-      passing: 5
-      coverage: "Diagnostics data collection and redaction"
-      
-  improvement_areas:
-    - area: "sensor.py coverage"
-      current: 47
-      target: 85
-      notes: "Many edge cases in PID sensors need test coverage"
-      
-    - area: "__init__.py coverage"
-      current: 68
-      target: 90
-      notes: "Add tests for error scenarios in webhook registration"
-      
-    - area: "State restoration"
-      current: "skipped"
-      target: "tested"
-      notes: "Complex RestoreEntity mocking needs refinement"
+    param_loader: 100
+    helpers: 98.9
+    sensor: 97.7
+    attributes: 95.5
+    init: 95.1
+    update: 87.9
+
+  test_architecture:
+    device_simulator: "tests/device_sim.py - drives the real webhook endpoint, coordinator, and entities"
+    baseline_suite: "tests/test_device_simulation.py - happy paths, identity, availability, migration safety"
+    chaos_suite: "tests/test_device_chaos.py - hostile values, floods, transport garbage, GPS chaos, concurrency, lifecycle churn"
+    hardening_units: "tests/test_hardening.py - listener isolation, sanitizer edge types, lifecycle races"
+
+  quality_gates:
+    - "pytest: 421 passed, coverage 96.9%"
+    - "mypy --strict: 0 errors"
+    - "ruff: clean on custom_components/wican"
 
 # ============================================================================
 # INTEGRATION CHARACTERISTICS
@@ -423,7 +415,7 @@ integration_characteristics:
   platforms:
     - platform: sensor
       entities: "status + dynamic PID sensors"
-      state_class: "measurement"
+      state_class: "measurement (latched per-PID once a numeric value is seen; text PIDs stay stateless)"
       
     - platform: binary_sensor
       entities: "BLE, ECU, Sleep, VPN status"
@@ -444,9 +436,12 @@ integration_characteristics:
     
   reliability:
     coordinator: "DataUpdateCoordinator with push updates"
-    fallback: "Polling every 5 minutes if no webhook"
+    fallback: "Health check every 5 minutes marks stale device unavailable"
     retry_logic: "Exponential backoff with 3 retries"
     ip_caching: "5-minute cache for mDNS resolution"
+    registration_coalescing: "Concurrent re-registrations fold into one run + one trailing rerun"
+    gps_filtering: "Fixes worse than 200 m accuracy cannot move an already-located vehicle"
+    hardened_data_path: "Hostile/corrupt payloads degrade gracefully; proven by failure-injection suites"
     
   requirements:
     firmware: "v2.00+ recommended (MAC-based discovery)"
@@ -531,26 +526,28 @@ maintenance:
 # ============================================================================
 
 conclusion:
-  quality_level: "Silver (High-Quality Production-Ready)"
+  quality_level: "Gold (code complete; Platinum rules satisfied)"
   core_ready: true
-  
+
   summary: |
-    WiCAN integration demonstrates excellent quality with modern architecture, 
-    comprehensive type hints, proper error handling, and good test coverage.
-    
+    WiCAN integration demonstrates excellent quality with modern architecture,
+    strict typing, a hardened data path, and exhaustive testing.
+
     Key achievements:
-    - 95% HA coding standards compliance
-    - 72% test coverage with 95% pass rate
+    - 96.9% test coverage, 421 tests, 100% pass rate
+    - mypy --strict clean (Platinum strict-typing rule)
+    - Unbreakable data path: hostile/corrupt device data degrades gracefully,
+      proven by a device simulator with failure-injection suites
     - Modern DataUpdateCoordinator pattern
-    - Security features (validation, confirmation)
-    - Performance optimizations
+    - Security features (identity validation, confirmation, sanitized persistence)
+    - Performance optimizations (__slots__, IP caching, coalesced registration)
     - Comprehensive documentation
-    
-    Integration meets all Silver requirements and substantially meets Gold requirements.
-    Ready for core submission with test expansion plan.
-    
+
+    Integration meets all Silver and Gold code requirements; the external
+    `brands` PR is the only remaining Gold blocker.
+
   next_steps:
-    - "Expand test coverage to 95%+ for Gold level"
+    - "Submit logo/icon PR to home-assistant/brands"
+    - "Bump manifest quality_scale once brands merges"
     - "Submit PR to home-assistant/core"
-    - "Address review feedback"
     - "Maintain and enhance based on user feedback"

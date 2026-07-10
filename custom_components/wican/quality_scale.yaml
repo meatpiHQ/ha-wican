@@ -104,7 +104,12 @@ rules:
     comment: Device has no authentication.
   test-coverage:
     status: done
-    comment: 95.4%+ overall (config_flow.py at 100%).
+    comment: >
+      96.9% overall, 421 tests (config_flow.py, coordinator.py,
+      device_tracker.py, binary_sensor.py at 100%). Includes an end-to-end
+      device simulator plus failure-injection suites (test_device_chaos.py,
+      test_hardening.py) covering hostile payloads, floods, identity glitches,
+      and lifecycle races.
 
   # Gold
   devices:

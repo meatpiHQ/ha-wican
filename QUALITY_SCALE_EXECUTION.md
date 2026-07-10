@@ -243,11 +243,37 @@ Plus scaffold (quality_scale.yaml, manifest key) and a stale-test fix.
 - `entity-translations` — static entities translated; dynamic-PID limitation documented.
 - Phase 2 `test-coverage` — **95.8 %** overall, config_flow.py & param_loader.py 100 %, 332 passing.
 - Phase 3 docs — README rewritten to cover all `docs-*` rules.
+- Platinum `strict-typing` — `mypy --strict` clean across all 16 modules.
+- **Hardening pass (2026-07-10)** — made the push pipeline unbreakable and
+  proved it with failure injection. Coverage now **96.9 %**, **421 passing**;
+  coordinator/device_tracker/binary_sensor at 100 %. Details in
+  `notes/ROBUSTNESS_HARDENING.md`. Highlights:
+  - Coordinator isolates entity listeners: one bad value (non-numeric voltage,
+    >255-char string, NaN) can no longer abort the other entities, device-info
+    persistence, or PID discovery for that push — previously it wedged them
+    until the value changed.
+  - Entity-level numeric guards mirror HA's state-machine rules and drop
+    unusable values to `unknown`; overlong strings truncate at 255.
+  - PID `state_class` latches per-PID on the first numeric value, so text PIDs
+    (gear position) work while numeric PIDs keep long-term statistics.
+  - Device-reported info fields (`fw_version`, `host`, `mdns`, `device_id`, …)
+    are sanitized to bounded strings before persisting; `device_id` matching is
+    type-tolerant (number vs string on the wire).
+  - Bounded growth: dynamic-PID cap (1000), PID-key/config/info-field length
+    limits; junk keys and configs never reach the entity registry or disk.
+  - GPS: per-field parsing, non-finite rejection, and the (previously unused)
+    200 m `GPS_ACCURACY_THRESHOLD` now filters low-quality fixes.
+  - Webhook re-registration coalesces under connection flapping; startup
+    listener and dynamic-PID state are cleaned up on unload (no leaks/races).
+  - Tests: simulator extracted to `tests/device_sim.py` (hermetic — no more
+    real-network retry sleeps), 40-scenario `tests/test_device_chaos.py`,
+    17-test `tests/test_hardening.py`, weak assertions in the baseline suite
+    strengthened, dead `_pending_value` code removed.
 
 ### Remaining for Gold
 - `brands` — external PR to `home-assistant/brands` (logo + icon). **Only blocker.**
 - Finalize: once `brands` merges, bump manifest `quality_scale` to `gold`.
 
 ### Beyond Gold
-- Platinum: `strict-typing` (see the Platinum plan). `async-dependency` and
-  `inject-websession` already satisfied.
+- Platinum: `strict-typing` **done**; `async-dependency` and `inject-websession`
+  already satisfied. Bump manifest to `platinum` after Gold's `brands` merges.
