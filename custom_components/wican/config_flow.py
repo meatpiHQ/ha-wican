@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.components import onboarding
 from homeassistant.const import CONF_HOST, CONF_WEBHOOK_ID
 from homeassistant.core import callback
+from homeassistant.helpers.network import NoURLAvailableError
 import voluptuous as vol
 from yarl import URL
 
@@ -65,11 +66,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
 
             webhook_id = uuid4().hex
-            webhook_url = resolve_webhook_url(
-                self.hass,
-                webhook_id,
-                require_current_request=True,
-            )
+            try:
+                webhook_url = resolve_webhook_url(
+                    self.hass,
+                    webhook_id,
+                    require_current_request=True,
+                )
+            except NoURLAvailableError:
+                # E.g. setting up via Nabu Casa cloud with no internal URL
+                # configured: the device needs a plain-http URL to push to.
+                # A friendly abort beats "Unknown error occurred".
+                return self.async_abort(reason="no_url_available")
             entry_data = {
                 CONF_WEBHOOK_ID: webhook_id,
                 "webhook_url": webhook_url,
@@ -190,11 +197,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Auto-add during onboarding for seamless setup
         if user_input is not None or not onboarding.async_is_onboarded(self.hass):
             webhook_id = uuid4().hex
-            webhook_url = resolve_webhook_url(
-                self.hass,
-                webhook_id,
-                require_current_request=True,
-            )
+            try:
+                webhook_url = resolve_webhook_url(
+                    self.hass,
+                    webhook_id,
+                    require_current_request=True,
+                )
+            except NoURLAvailableError:
+                return self.async_abort(reason="no_url_available")
 
             return self.async_create_entry(
                 title=self.discovered_name or "WiCAN",

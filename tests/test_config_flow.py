@@ -716,3 +716,69 @@ async def test_reconfigure_flow(
 
 
 
+
+
+async def test_user_flow_no_url_available_aborts_cleanly(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """No resolvable HTTP URL aborts with a friendly reason, not a crash.
+
+    Regression: NoURLAvailableError (e.g. cloud-only setup without an
+    internal URL) propagated out of the flow and the user saw
+    "Unknown error occurred".
+    """
+    from homeassistant.helpers.network import NoURLAvailableError
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+
+    with patch(
+        "custom_components.wican.config_flow.resolve_webhook_url",
+        side_effect=NoURLAvailableError,
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"mdns": "http://wican_test.local:80"},
+        )
+
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "no_url_available"
+
+
+async def test_zeroconf_confirm_no_url_available_aborts_cleanly(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """The zeroconf confirm step aborts cleanly without a webhook URL."""
+    from homeassistant.helpers.network import NoURLAvailableError
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.100",
+        ip_addresses=["192.168.1.100"],
+        hostname="wican_abort.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={"mac": b"AA:BB:CC:DD:EE:F0"},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+    assert result["type"] == FlowResultType.FORM
+
+    with patch(
+        "custom_components.wican.config_flow.resolve_webhook_url",
+        side_effect=NoURLAvailableError,
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {},
+        )
+
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "no_url_available"

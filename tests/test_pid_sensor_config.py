@@ -1031,3 +1031,41 @@ def test_pid_enabled_by_default_policy() -> None:
     assert _pid_enabled_by_default("HV_C_V_001") is False
     assert _pid_enabled_by_default("HV_C_V_188") is False
     assert _pid_enabled_by_default("HV_C_D_042") is False
+
+
+async def test_changed_pid_config_persists_without_new_pid(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A corrected unit/class on a known PID persists without a new PID.
+
+    Regression: config was only persisted when the same push also
+    discovered a NEW PID, so fixing a wrong unit on the device reverted
+    to the stale stored unit after every Home Assistant restart.
+    """
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    def push(data: dict) -> None:
+        mock_config_entry.runtime_data.coordinator.handle_webhook_data(data)
+        async_dispatcher_send(hass, "wican", "test_webhook_id", data)
+
+    # First push creates the PID with a (wrong) unit.
+    push({
+        "autopid_data": {"coolant": 90},
+        "config": {"coolant": {"unit": "°F", "class": "temperature"}},
+    })
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_get_entry(mock_config_entry.entry_id)
+    assert entry.data["config"]["coolant"]["unit"] == "°F"
+
+    # The user fixes the unit on the device; no new PID in this push.
+    push({
+        "autopid_data": {"coolant": 90},
+        "config": {"coolant": {"unit": "°C", "class": "temperature"}},
+    })
+    await hass.async_block_till_done()
+
+    entry = hass.config_entries.async_get_entry(mock_config_entry.entry_id)
+    assert entry.data["config"]["coolant"]["unit"] == "°C"

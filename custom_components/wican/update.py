@@ -48,6 +48,17 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1  # Only one update at a time
 
 
+def _tag_version(release: dict[str, Any] | None) -> str:
+    """Version part of a release's tag, null-safe and prefix-insensitive.
+
+    GitHub can hand back ``"tag_name": null``, and a maintainer may tag
+    ``V4.45`` — neither must break the update entity's properties.
+    """
+    if not release:
+        return ""
+    return str(release.get("tag_name") or "").lstrip("vV")
+
+
 async def async_setup_entry(
     _hass: HomeAssistant,
     entry: WiCANConfigEntry,
@@ -105,10 +116,8 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
     @property
     def latest_version(self) -> str | None:
         """Return the latest firmware version from GitHub."""
-        if not self._github_coordinator.data:
-            return None
-        version = self._github_coordinator.data.get("tag_name", "").lstrip("v")
-        return self._normalize_version(version)
+        version = _tag_version(self._github_coordinator.data)
+        return self._normalize_version(version) or None
 
     def _normalize_version(self, version: str | None) -> str | None:
         """Normalize version string by removing device-specific suffixes.
@@ -131,8 +140,9 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             return None
         if not version:
             return version
-        # Remove common suffixes: 'p' (PRO), 'u' (USB)
-        return version.rstrip("pu")
+        # Remove common suffixes: 'p' (PRO), 'u' (USB) — either case, so a
+        # maintainer tagging v4.45P cannot leave an eternal update offered.
+        return version.rstrip("puPU")
 
     @property
     def release_url(self) -> str | None:
@@ -165,7 +175,11 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             self._attr_in_progress = True
             self.async_write_ha_state()
 
-            # Resolve version (use latest if not specified)
+            # Resolve version (use latest if not specified). Users naturally
+            # type the tag forms ("v4.45", "4.45p"); normalize them the same
+            # way release tags are normalized so the lookup can match.
+            if isinstance(version, str):
+                version = self._normalize_version(version.lstrip("vV"))
             target_version = version or self.latest_version
             if not target_version:
                 raise HomeAssistantError(
@@ -259,7 +273,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                 if not isinstance(release, dict) or release.get("prerelease", False):
                     continue
 
-                tag_name = release.get("tag_name", "").lstrip("v")
+                tag_name = _tag_version(release)
                 normalized_tag = self._normalize_version(tag_name)
 
                 # Check if this release matches the requested version
@@ -300,8 +314,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         """
         # Fetch specific release from GitHub if version differs from latest
         normalized_latest = self._normalize_version(
-            self._github_coordinator.data.get("tag_name", "").lstrip("v")
-            if self._github_coordinator.data else None,
+            _tag_version(self._github_coordinator.data),
         )
 
         # If requesting a different version than the cached latest, fetch it from GitHub

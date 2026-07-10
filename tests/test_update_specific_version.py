@@ -261,3 +261,97 @@ async def test_install_latest_version_uses_cache(
         # Verify firmware was downloaded
         download_calls = [call for call in get_calls if "api.github.com" not in str(call)]
         assert len(download_calls) > 0, "Should have downloaded firmware"
+
+
+@pytest.mark.parametrize("user_version", ["v4.44", "4.44p", "V4.44P"])
+async def test_install_accepts_natural_version_forms(
+    hass: HomeAssistant,
+    mock_github_releases_list: list[dict],
+    user_version: str,
+) -> None:
+    """update.install accepts the tag forms users naturally type.
+
+    Regression: the raw user string was compared against normalized
+    tags, so "v4.44" or "4.44p" failed with version_not_found even
+    though the release exists.
+    """
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN PRO Device",
+        data={
+            "mdns": "http://wican_pro.local:80",
+            "webhook_id": "test_webhook_id_pro",
+            "fw_version": "4.46p",
+            "hw_version": "WiCAN-PRO",
+            "device_id": "test_device_pro",
+            "host": "wican_pro.local",
+            "ip": "192.168.1.101",
+        },
+        options={"post_interval": 1000},
+        unique_id="wican_pro-192.168.1.101:80",
+    )
+    config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession",
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession",
+        ) as mock_update_session,
+    ):
+        mock_gh_response = AsyncMock()
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(
+            return_value=[mock_github_releases_list[0]],
+        )
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
+
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        mock_download_response = AsyncMock()
+        mock_download_response.read.return_value = b"fake_firmware_data_v444"
+        mock_download_response.raise_for_status = MagicMock()
+
+        mock_upload_response = AsyncMock()
+        mock_upload_response.raise_for_status = MagicMock()
+
+        mock_releases_response = AsyncMock()
+        mock_releases_response.status = 200
+        mock_releases_response.json = AsyncMock(
+            return_value=mock_github_releases_list,
+        )
+        mock_releases_response.raise_for_status = MagicMock()
+
+        async def get_side_effect(url, **kwargs):
+            if "api.github.com" in url and "releases" in url:
+                return mock_releases_response
+            return mock_download_response
+
+        mock_update_session.return_value.get = AsyncMock(side_effect=get_side_effect)
+        mock_update_session.return_value.post = AsyncMock(
+            return_value=mock_upload_response,
+        )
+
+        await hass.services.async_call(
+            UPDATE_DOMAIN,
+            SERVICE_INSTALL,
+            {
+                ATTR_ENTITY_ID: "update.wican_pro_device_firmware",
+                ATTR_VERSION: user_version,
+            },
+            blocking=True,
+        )
+
+        get_calls = mock_update_session.return_value.get.call_args_list
+        download_calls = [
+            call for call in get_calls if "api.github.com" not in str(call)
+        ]
+        assert download_calls, "Should have downloaded firmware"
+        assert "v444p" in str(download_calls[0][0][0])

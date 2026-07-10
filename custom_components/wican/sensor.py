@@ -437,8 +437,11 @@ async def async_setup_entry(  # noqa: C901
             config_entry, sensors, pid_data, pid_config,
         )
         if new_entities:
-            _persist_pid_entities(hass, config_entry, sensors, pid_data, pid_config)
             async_add_entities(new_entities)
+        # Persist on every PID push, not only when a new PID appeared: a
+        # corrected unit/class on an already-known PID must survive a
+        # restart too. async_update_entry is a no-op when nothing changed.
+        _persist_pid_entities(hass, config_entry, sensors, pid_data, pid_config)
 
     def handle_pid_update(webhook_id: str, data: dict[str, Any]) -> None:
         # IMPORTANT: multiple WiCAN entries share the same dispatcher signal.

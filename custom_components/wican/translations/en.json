@@ -34,7 +34,8 @@
         "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
         "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
         "cloud_not_connected": "[%key:common::config_flow::abort::cloud_not_connected%]",
-        "webhook_not_internet_accessible": "[%key:common::config_flow::abort::webhook_not_internet_accessible%]"
+        "webhook_not_internet_accessible": "[%key:common::config_flow::abort::webhook_not_internet_accessible%]",
+        "no_url_available": "Home Assistant has no HTTP address the device could push to. Set the internal URL under Settings > System > Network, then retry setup."
       },
       "create_entry": {
         "default": "To send events to Home Assistant, you will need to set up a webhook.\n\nOpen WiCAN and go to *Settings → Services → Automation → Webhooks*\n\nEnable *Webhooks* and fill in the following webhook in the URL field:\n\n`{webhook_url}`\n\nSee [the documentation]({docs_url}) for further details."
