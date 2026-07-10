@@ -302,3 +302,24 @@ async def test_base_url_with_path_is_normalized(
     capabilities = await client.async_probe()
 
     assert capabilities.has_http_api
+
+
+async def test_oversized_chunked_response_rejected(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """A giant body WITHOUT a declared length is cut off at the cap.
+
+    Regression: the cap was checked only after the whole body was
+    buffered, so a chunked response could balloon memory before being
+    rejected. The read now streams and aborts at the first byte past
+    the cap.
+    """
+    from custom_components.wican.const import MAX_API_RESPONSE_BYTES
+
+    aioclient_mock.get(
+        f"{BASE_URL}/api/fs/list",
+        content=b"x" * (MAX_API_RESPONSE_BYTES + 1),
+    )
+
+    with pytest.raises(MeatPiApiError, match="too large"):
+        await _client(hass).async_fs_list("/sd/logs")

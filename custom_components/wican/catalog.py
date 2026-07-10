@@ -47,6 +47,7 @@ from .const import (
     MANUFACTURER,
 )
 from .devices import CatalogSensorDef, MeatPiDeviceProfile, apply_catalog
+from .helpers import async_read_capped
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -214,15 +215,11 @@ async def _async_fetch_remote(hass: HomeAssistant) -> Any:
                     "Device catalog fetch failed: HTTP %s", response.status,
                 )
                 return None
-            declared = response.headers.get("Content-Length")
-            if declared and declared.isdigit() and int(declared) > CATALOG_MAX_BYTES:
+            raw = await async_read_capped(response, CATALOG_MAX_BYTES)
+            if raw is None:
                 _LOGGER.warning("Device catalog response too large; ignoring")
                 return None
-            text = await response.text()
-            if len(text) > CATALOG_MAX_BYTES:
-                _LOGGER.warning("Device catalog response too large; ignoring")
-                return None
-            return json.loads(text)
+            return json.loads(raw.decode("utf-8"))
     except Exception as err:  # Defensive: a fetch must never break setup.
         _LOGGER.debug("Device catalog fetch failed: %s", err)
         return None

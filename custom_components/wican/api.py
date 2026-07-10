@@ -42,6 +42,7 @@ from .const import (
     MAX_API_RESPONSE_BYTES,
 )
 from .exceptions import MeatPiApiConnectionError, MeatPiApiError
+from .helpers import async_read_capped
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -110,30 +111,21 @@ class MeatPiApiClient:
             async with asyncio.timeout(request_timeout):
                 response = await self._session.request(method, url)
                 # A glitching or hostile device must not be able to balloon
-                # memory with a giant body (chunked bodies without a length
-                # are additionally length-checked after the read).
-                declared_length = response.headers.get("Content-Length")
-                if (
-                    declared_length
-                    and declared_length.isdigit()
-                    and int(declared_length) > max_bytes
-                ):
+                # memory with a giant body: an honest declared length is
+                # refused before any read, and a chunked body (no length)
+                # is streamed so the read stops at the cap.
+                raw = await async_read_capped(response, max_bytes)
+                if raw is None:
                     raise MeatPiApiError(
                         f"Device API {method} {path} response too large "
-                        f"({declared_length} bytes)",
+                        f"(> {max_bytes} bytes)",
                     )
+                text = raw.decode("utf-8", errors="replace")
                 if response.status >= 400:
-                    body = await response.text()
                     raise MeatPiApiError(
                         f"Device API {method} {path} failed with "
-                        f"HTTP {response.status}: {body[:200]}",
+                        f"HTTP {response.status}: {text[:200]}",
                         status=response.status,
-                    )
-                text = await response.text()
-                if len(text) > max_bytes:
-                    raise MeatPiApiError(
-                        f"Device API {method} {path} response too large "
-                        f"({len(text)} characters)",
                     )
                 return text, response.headers
         except TimeoutError as err:

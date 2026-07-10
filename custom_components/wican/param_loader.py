@@ -38,6 +38,7 @@ from .const import (
     PARAMS_STORAGE_KEY,
     PARAMS_STORAGE_VERSION,
 )
+from .helpers import async_read_capped
 
 if TYPE_CHECKING:
     from typing import Final
@@ -213,8 +214,11 @@ def _load_params() -> dict[str, ParamDefinition]:
     except FileNotFoundError:
         _LOGGER.warning("params.json not found at %s, using empty defaults", params_file)
         return {}
-    except json.JSONDecodeError:
-        _LOGGER.exception("Failed to parse params.json")
+    except (OSError, ValueError) as err:
+        # This runs at module import: a PermissionError or invalid UTF-8
+        # (UnicodeDecodeError is a ValueError, NOT a JSONDecodeError) must
+        # degrade to empty params, not fail the whole integration load.
+        _LOGGER.exception("Failed to load params.json (%s)", type(err).__name__)
         return {}
 
 
@@ -296,12 +300,8 @@ async def _read_params_response(response: Any, etag: str | None) -> ParamsFetchR
         )
         return ParamsFetchResult(ok=False)
 
-    declared = response.headers.get("Content-Length")
-    too_large = bool(
-        declared and declared.isdigit() and int(declared) > PARAMS_MAX_BYTES,
-    )
-    content = b"" if too_large else await response.read()
-    if too_large or len(content) > PARAMS_MAX_BYTES:
+    content = await async_read_capped(response, PARAMS_MAX_BYTES)
+    if content is None:
         _LOGGER.warning("Fetched params.json too large; ignoring")
         return ParamsFetchResult(ok=False)
 
@@ -376,16 +376,21 @@ class _ParamsManager:
         stored = await self._store.async_load()
         if not isinstance(stored, dict):
             return
+        validated = _validate_remote_params(stored.get("params"))
+        if not validated:
+            # Corrupt or empty stored params: the stored ETag must not be
+            # trusted either. Sending If-None-Match for a payload that was
+            # never applied would 304 forever and wedge the integration on
+            # the bundled definitions until upstream's ETag changes.
+            return
         raw_etag = stored.get("etag")
         if isinstance(raw_etag, str):
             self._etag = raw_etag
-        validated = _validate_remote_params(stored.get("params"))
-        if validated:
-            _PARAMS.clear()
-            _PARAMS.update(validated)
-            _LOGGER.debug(
-                "Applied %d stored parameter definitions", len(validated),
-            )
+        _PARAMS.clear()
+        _PARAMS.update(validated)
+        _LOGGER.debug(
+            "Applied %d stored parameter definitions", len(validated),
+        )
 
     async def async_sync(self, *, force: bool = False) -> bool | None:
         """Apply stored params, then fetch updates.

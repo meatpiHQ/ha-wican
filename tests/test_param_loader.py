@@ -416,9 +416,18 @@ def _mock_session(
     """Build a mocked aiohttp session returning one canned response."""
     from unittest.mock import AsyncMock, MagicMock
 
+    from aiohttp import StreamReader
+    from unittest import mock
+
+    protocol = mock.Mock(_reading_paused=False)
+    stream = StreamReader(protocol, limit=2**16)
+    stream.feed_data(body)
+    stream.feed_eof()
+
     response = AsyncMock()
     response.status = status
     response.headers = headers or {}
+    response.content = stream
     response.read = AsyncMock(return_value=body)
     response.release = MagicMock()
     session = MagicMock()
@@ -674,3 +683,93 @@ class TestParamsManagerSync:
             AsyncMock(return_value=self._fetch_result(ok=True, unchanged=True)),
         ):
             assert await pl.async_force_params_refresh(hass) is False
+
+
+class TestBundledLoadHardening:
+    """The import-time bundled load must degrade, never raise."""
+
+    def test_load_params_invalid_utf8_returns_empty(self, tmp_path) -> None:
+        """Invalid UTF-8 raises UnicodeDecodeError (a ValueError, not a
+        JSONDecodeError) — it must degrade to empty params, not fail the
+        module import and with it the whole integration."""
+        from unittest.mock import patch
+
+        from custom_components.wican import param_loader as pl
+
+        bad = tmp_path / "params.json"
+        bad.write_bytes(b"\xff\xfe\x00garbage")
+        with patch.object(pl, "_get_params_file_path", return_value=bad):
+            assert pl._load_params() == {}
+
+    def test_load_params_permission_error_returns_empty(self, tmp_path) -> None:
+        """An unreadable file (e.g. after a botched update) degrades too."""
+        from unittest.mock import MagicMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        path = MagicMock()
+        path.open.side_effect = PermissionError("denied")
+        with patch.object(pl, "_get_params_file_path", return_value=path):
+            assert pl._load_params() == {}
+
+
+class TestStoredEtagTrust:
+    """The stored ETag is only valid alongside valid stored params."""
+
+    @pytest.fixture(autouse=True)
+    def _restore_params(self):
+        from custom_components.wican import param_loader as pl
+
+        saved = dict(pl._PARAMS)
+        yield
+        pl._PARAMS.clear()
+        pl._PARAMS.update(saved)
+
+    @pytest.mark.asyncio
+    async def test_corrupt_stored_params_do_not_wedge_on_etag(self, hass) -> None:
+        """Corrupt stored params must not send the stored If-None-Match.
+
+        Regression: the ETag was applied before validating the stored
+        params, so a corrupt payload with an intact ETag made every
+        future fetch 304 — wedging the integration on the bundled
+        definitions until upstream's ETag changed.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from custom_components.wican import param_loader as pl
+        from custom_components.wican.param_loader import ParamsFetchResult
+
+        manager = pl._get_manager(hass)
+        await manager._store.async_save(
+            {"params": "corrupt-not-a-dict", "etag": 'W/"stale"'},
+        )
+
+        fetch = AsyncMock(return_value=ParamsFetchResult(ok=False))
+        with patch.object(pl, "async_fetch_params_from_github", fetch):
+            await pl.async_update_params_from_github(hass)
+
+        # The fetch must have been unconditional (no stale If-None-Match).
+        assert fetch.call_args.kwargs.get("etag") is None
+
+    @pytest.mark.asyncio
+    async def test_valid_stored_params_do_use_etag(self, hass) -> None:
+        """A valid stored payload keeps the cheap conditional request."""
+        from unittest.mock import AsyncMock, patch
+
+        from custom_components.wican import param_loader as pl
+        from custom_components.wican.param_loader import ParamsFetchResult
+
+        manager = pl._get_manager(hass)
+        await manager._store.async_save(
+            {
+                "params": {"GOOD": {"description": "ok", "settings": {}}},
+                "etag": 'W/"fresh"',
+            },
+        )
+
+        fetch = AsyncMock(return_value=ParamsFetchResult(ok=True, unchanged=True))
+        with patch.object(pl, "async_fetch_params_from_github", fetch):
+            await pl.async_update_params_from_github(hass)
+
+        assert fetch.call_args.kwargs.get("etag") == 'W/"fresh"'
+        assert pl._PARAMS["GOOD"]["description"] == "ok"

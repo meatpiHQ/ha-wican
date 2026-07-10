@@ -23,6 +23,32 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Chunk size for capped body reads; small enough that the cap overshoots
+# by at most one chunk, large enough not to slow normal bodies down.
+_READ_CHUNK_BYTES = 64 * 1024
+
+
+async def async_read_capped(response: Any, max_bytes: int) -> bytes | None:
+    """Read an HTTP response body, refusing anything past ``max_bytes``.
+
+    A declared Content-Length above the cap is refused before any read;
+    the body is then streamed chunk by chunk so a chunked response (no
+    length header) cannot balloon memory before a post-read length check —
+    the read stops at the first chunk past the cap. Returns None when the
+    body is (or would grow) too large.
+    """
+    declared = response.headers.get("Content-Length")
+    if declared and declared.isdigit() and int(declared) > max_bytes:
+        return None
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.content.iter_chunked(_READ_CHUNK_BYTES):
+        total += len(chunk)
+        if total > max_bytes:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
 
 def build_webhook_url(base_url: str, webhook_id: str) -> str:
     """Build an absolute webhook URL from a base URL and webhook id."""
