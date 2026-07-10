@@ -163,24 +163,32 @@ def test_normalize_ip_ipv4_mapped_alternate():
     assert _normalize_ip("::ffff:c0a8:0164") == "c0a8:0164"
 
 
-def test_extract_request_ip_from_x_forwarded_for():
-    """Test _extract_request_ip with X-Forwarded-For header."""
+def test_extract_request_ip_ignores_x_forwarded_for():
+    """A spoofed X-Forwarded-For must NOT override the peer address.
+
+    Regression (L1): the header was trusted unconditionally, letting any
+    client that learned the webhook path redirect webhook registration
+    and control-API traffic. HA's HTTP middleware already resolves the
+    header — and only for configured trusted proxies — into
+    request.remote, which is what the extraction now uses.
+    """
     request = MagicMock(spec=Request)
-    request.headers.get.return_value = "203.0.113.1, 198.51.100.1"
+    request.headers.get.return_value = "203.0.113.99, 198.51.100.1"
     request.transport = None
-    request.remote = None
-    
+    request.remote = "192.168.1.50"
+
     result = _extract_request_ip(request)
-    assert result == "203.0.113.1"
+    assert result == "192.168.1.50"
 
 
-def test_extract_request_ip_from_x_forwarded_for_with_ipv6():
-    """Test _extract_request_ip with X-Forwarded-For containing IPv6."""
+def test_extract_request_ip_without_remote_falls_back_to_peername():
+    """No request.remote: the transport peer is used, never the header."""
     request = MagicMock(spec=Request)
-    request.headers.get.return_value = "::ffff:192.168.1.1, 198.51.100.1"
-    request.transport = None
+    request.headers.get.return_value = "203.0.113.99"
     request.remote = None
-    
+    request.transport = MagicMock()
+    request.transport.get_extra_info.return_value = ("::ffff:192.168.1.1", 1234)
+
     result = _extract_request_ip(request)
     assert result == "192.168.1.1"
 

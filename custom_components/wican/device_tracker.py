@@ -265,14 +265,20 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
         # Restore last known GPS location
         last_state = await self.async_get_last_state()
         if last_state:
-            # Restore coordinates
-            if "latitude" in last_state.attributes:
-                with contextlib.suppress(ValueError, TypeError):
-                    self._attr_latitude = float(last_state.attributes["latitude"])
-
-            if "longitude" in last_state.attributes:
-                with contextlib.suppress(ValueError, TypeError):
-                    self._attr_longitude = float(last_state.attributes["longitude"])
+            # Restore coordinates as a validated pair: a corrupt restore
+            # (lat=999, NaN, one coordinate missing) gets the same range
+            # gate as a live fix instead of resurrecting an impossible
+            # location as an available tracker.
+            lat = _as_finite_float(last_state.attributes.get("latitude"))
+            lon = _as_finite_float(last_state.attributes.get("longitude"))
+            if (
+                lat is not None
+                and lon is not None
+                and MIN_GPS_LATITUDE <= lat <= MAX_GPS_LATITUDE
+                and MIN_GPS_LONGITUDE <= lon <= MAX_GPS_LONGITUDE
+            ):
+                self._attr_latitude = lat
+                self._attr_longitude = lon
 
             # Restore accuracy
             if "gps_accuracy" in last_state.attributes:

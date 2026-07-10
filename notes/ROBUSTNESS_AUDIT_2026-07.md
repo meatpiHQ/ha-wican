@@ -206,36 +206,35 @@ params with a logged exception.
 
 ## Low priority (status per item)
 
-- **L1** `__init__.py:264-268`: `X-Forwarded-For` trusted unconditionally as
-  the authoritative device IP — spoofable redirect of control-API /
-  registration traffic. HA convention: honor XFF only from trusted proxies.
-- **L2** `coordinator.py:155`: `self._data.update(data)` never prunes —
-  rotating top-level keys from a buggy firmware grow memory without bound
-  (PID *sensors* are capped; the dict is not).
+- **L1** — FIXED (2026-07-11): the header is no longer parsed; the
+  extraction uses `request.remote`, which HA's middleware only rewrites
+  for configured trusted proxies.
+- **L2** — FIXED (2026-07-11): distinct top-level payload keys are
+  capped at `MAX_COORDINATOR_KEYS` (known keys always refresh).
 - **L3** — FIXED (2026-07-11): user-supplied install versions are
   normalized (`v4.45`, `4.45p`, `V4.45P` all resolve).
 - **L4** — FIXED (2026-07-11): `_tag_version()` is null-safe and strips
   `v`/`V`; `_normalize_version` strips suffixes case-insensitively.
-- **L5** `device_tracker.py:262-275`: restored GPS coordinates skip the range
-  validation live updates get — corrupt restore (lat=999) accepted.
+- **L5** — FIXED (2026-07-11): restored coordinates get the same
+  finite + range validation as live fixes, as a lat/lon pair.
 - **L6** — FIXED (2026-07-11): the tracker derives manufacturer/model
   from the device profile exactly like `WiCANEntity.device_info`.
 - **L7** — FIXED (2026-07-11): diagnostics collect entities via the
   entity registry scoped to the config entry — no sibling leakage, rename
   safe.
-- **L8** `__init__.py:1168-1200`, `api.py:111-124`: some HTTP responses never
-  read/released → "Unclosed response" connection churn under the shared
-  session.
-- **L9** `__init__.py:755-757`: webhook unregistered before
-  `async_unload_platforms`; if platform unload fails the entry stays loaded
-  but deaf to pushes.
-- **L10** `helpers.py:191-238`: `wican_exception_handler` is dead code; if
-  ever wired up, its `last_update_success = False` side effect would mark all
-  push-fed entities unavailable on a control-action failure.
-- **L11** `entity.py:40-46`: `_attr_name` set unconditionally defeats
-  `translation_key` — users see raw keys (`batt_voltage`) instead of
-  translated names ("Battery Voltage"). Entity IDs in tests lock this in;
-  fixing changes entity IDs for new installs (migration consideration).
+- **L8** — FIXED (2026-07-11): registration success reads the body
+  (returning the connection to the pool); `async_read_capped` closes the
+  response when aborting an oversized body.
+- **L9** — FIXED (2026-07-11): platforms unload first; the webhook is
+  only unregistered when the unload succeeded.
+- **L10** — FIXED (2026-07-11): the dead `wican_exception_handler` and
+  its tests were removed.
+- **L11** — FIXED (2026-07-11, product decision: Ali): `_attr_name` is
+  only set for explicit description names; translated names now show
+  ("Battery Voltage"). New installs get name-based entity IDs
+  (`battery_voltage`, `bluetooth_enabled`, `ecu_online`,
+  `refresh_integration_definitions`); existing installs keep their
+  registered IDs (HA pins entity_id at creation).
 - **L12** History backfill memory: up to ~200k parsed row dicts + an 8 MiB
   file text per iteration — bounded by design constants but a real spike on
   a Pi with several entries syncing concurrently.

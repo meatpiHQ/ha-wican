@@ -124,7 +124,7 @@ async def test_diagnostics_includes_entity_states(
     # Should include sensor states
     entities = diagnostics["entities"]
     assert any("wifi_mode" in key for key in entities.keys())
-    assert any("batt_voltage" in key for key in entities.keys())
+    assert any("battery_voltage" in key for key in entities.keys())
 
 
 async def test_diagnostics_includes_runtime_data(
@@ -177,5 +177,5 @@ async def test_diagnostics_scoped_to_the_entry(
     assert "sensor.wican_other_batt_voltage" not in diagnostics["entities"]
     # Entities of this entry are present regardless of naming.
     assert any(
-        eid.endswith("batt_voltage") for eid in diagnostics["entities"]
+        eid.endswith("battery_voltage") for eid in diagnostics["entities"]
     )

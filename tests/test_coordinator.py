@@ -417,3 +417,32 @@ async def test_coordinator_numeric_string_conversion_edge_cases(
 
 
 
+
+
+async def test_rotating_payload_keys_are_capped(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_webhook_data: dict,
+) -> None:
+    """A firmware emitting ever-new top-level keys cannot grow memory.
+
+    Regression (L2): coordinator._data merged every push key forever.
+    Known keys keep refreshing; new ones stop at the cap.
+    """
+    from custom_components.wican.const import MAX_COORDINATOR_KEYS
+
+    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    await coordinator.async_config_entry_first_refresh()
+    coordinator.handle_webhook_data(mock_webhook_data)
+
+    for i in range(MAX_COORDINATOR_KEYS * 2):
+        coordinator.handle_webhook_data(
+            {"status": {"device_id": "test_device_123"}, f"junk_{i}": i},
+        )
+
+    assert len(coordinator.data) <= MAX_COORDINATOR_KEYS
+    # Known keys still refresh past the cap.
+    coordinator.handle_webhook_data(
+        {"status": {"device_id": "test_device_123", "uptime": "new"}},
+    )
+    assert coordinator.data["status"]["uptime"] == "new"

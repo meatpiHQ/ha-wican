@@ -23,11 +23,11 @@ async def test_binary_sensor_entities_created(
     entity_registry = er.async_get(hass)
 
     # Check binary sensors exist
-    ble_status = entity_registry.async_get("binary_sensor.wican_device_ble_status")
+    ble_status = entity_registry.async_get("binary_sensor.wican_device_bluetooth_enabled")
     assert ble_status is not None
     assert ble_status.unique_id.endswith("_ble_status")
 
-    ecu_status = entity_registry.async_get("binary_sensor.wican_device_ecu_status")
+    ecu_status = entity_registry.async_get("binary_sensor.wican_device_ecu_online")
     assert ecu_status is not None
     assert ecu_status.unique_id.endswith("_ecu_status")
 
@@ -49,11 +49,11 @@ async def test_binary_sensor_states_update_from_webhook(
     await hass.async_block_till_done()
 
     # Check binary sensor states
-    ble_status_state = hass.states.get("binary_sensor.wican_device_ble_status")
+    ble_status_state = hass.states.get("binary_sensor.wican_device_bluetooth_enabled")
     assert ble_status_state is not None
     assert ble_status_state.state == STATE_OFF  # "Disabled" maps to off
 
-    ecu_status_state = hass.states.get("binary_sensor.wican_device_ecu_status")
+    ecu_status_state = hass.states.get("binary_sensor.wican_device_ecu_online")
     assert ecu_status_state is not None
     assert ecu_status_state.state == STATE_ON  # "Online" maps to on
 
@@ -79,7 +79,7 @@ async def test_binary_sensor_bluetooth_on_off(
     await client.post(f"/api/webhook/{webhook_id}", json=data)
     await hass.async_block_till_done()
 
-    ble_state = hass.states.get("binary_sensor.wican_device_ble_status")
+    ble_state = hass.states.get("binary_sensor.wican_device_bluetooth_enabled")
     assert ble_state is not None
     assert ble_state.state == STATE_ON
 
@@ -90,7 +90,7 @@ async def test_binary_sensor_bluetooth_on_off(
     await client.post(f"/api/webhook/{webhook_id}", json=data)
     await hass.async_block_till_done()
 
-    ble_state = hass.states.get("binary_sensor.wican_device_ble_status")
+    ble_state = hass.states.get("binary_sensor.wican_device_bluetooth_enabled")
     assert ble_state is not None
     assert ble_state.state == STATE_OFF
 
@@ -114,7 +114,7 @@ async def test_binary_sensor_ecu_on_off(
     await client.post(f"/api/webhook/{webhook_id}", json=data)
     await hass.async_block_till_done()
 
-    ecu_state = hass.states.get("binary_sensor.wican_device_ecu_status")
+    ecu_state = hass.states.get("binary_sensor.wican_device_ecu_online")
     assert ecu_state.state == STATE_ON
 
     # Test "Offline" -> OFF
@@ -123,7 +123,7 @@ async def test_binary_sensor_ecu_on_off(
     await client.post(f"/api/webhook/{webhook_id}", json=data)
     await hass.async_block_till_done()
 
-    ecu_state = hass.states.get("binary_sensor.wican_device_ecu_status")
+    ecu_state = hass.states.get("binary_sensor.wican_device_ecu_online")
     assert ecu_state.state == STATE_OFF
 
 
@@ -134,11 +134,11 @@ async def test_binary_sensor_state_restoration(
     """Test binary sensor state is restored on startup."""
     # Store states before setup
     hass.states.async_set(
-        "binary_sensor.wican_device_ble_status",
+        "binary_sensor.wican_device_bluetooth_enabled",
         "on",
     )
     hass.states.async_set(
-        "binary_sensor.wican_device_ecu_status",
+        "binary_sensor.wican_device_ecu_online",
         "off",
     )
     
@@ -157,11 +157,11 @@ async def test_binary_sensor_state_restoration(
         await hass.async_block_till_done()
     
     # Check that states were restored
-    ble_status = hass.states.get("binary_sensor.wican_device_ble_status")
+    ble_status = hass.states.get("binary_sensor.wican_device_bluetooth_enabled")
     assert ble_status is not None
     assert ble_status.state == "on"
     
-    ecu_status = hass.states.get("binary_sensor.wican_device_ecu_status")
+    ecu_status = hass.states.get("binary_sensor.wican_device_ecu_online")
     assert ecu_status is not None
     assert ecu_status.state == "off"
 
@@ -195,7 +195,7 @@ async def test_binary_sensor_state_restoration_with_none_initial(
     
     # Pre-populate state registry with a saved state
     hass.states.async_set(
-        "binary_sensor.wican_device_ble_status",
+        "binary_sensor.wican_device_bluetooth_enabled",
         "on",
         {"restored": True}
     )
@@ -204,7 +204,7 @@ async def test_binary_sensor_state_restoration_with_none_initial(
     await hass.async_block_till_done()
     
     # State should be restored
-    state = hass.states.get("binary_sensor.wican_device_ble_status")
+    state = hass.states.get("binary_sensor.wican_device_bluetooth_enabled")
     assert state is not None
 
 
@@ -247,5 +247,5 @@ async def test_binary_sensor_none_checks(hass: HomeAssistant, hass_client) -> No
     await hass.async_block_till_done()
     
     # Verify entities exist and didn't crash
-    state = hass.states.get("binary_sensor.wican_test_ble_status")
+    state = hass.states.get("binary_sensor.wican_test_bluetooth_enabled")
     assert state is not None

@@ -18,6 +18,7 @@ from .const import (
     DEFAULT_POST_INTERVAL,
     DEVICE_STALE_FACTOR,
     DOMAIN,
+    MAX_COORDINATOR_KEYS,
     MIN_DEVICE_STALE_SECONDS,
     WICAN_DATA_UPDATE_INTERVAL,
 )
@@ -50,6 +51,7 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.config_entry = config_entry
         self._data: dict[str, Any] = {}
         self._last_push: datetime | None = None
+        self._key_cap_warned = False
 
         super().__init__(
             hass,
@@ -156,8 +158,21 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elapsed = (dt_util.utcnow() - self._last_push).total_seconds()
             resumed_after_gap = elapsed > self.staleness_threshold()
 
-        # Update internal data store
-        self._data.update(data)
+        # Update internal data store, bounded: known keys always refresh,
+        # but a buggy firmware emitting ever-new top-level keys cannot grow
+        # the dict without bound (dynamic PID *sensors* are already capped;
+        # this bounds the raw data they are fed from).
+        for key, value in data.items():
+            if key in self._data or len(self._data) < MAX_COORDINATOR_KEYS:
+                self._data[key] = value
+            elif not self._key_cap_warned:
+                self._key_cap_warned = True
+                _LOGGER.warning(
+                    "Ignoring new payload key %r: more than %d distinct "
+                    "top-level keys received from this device",
+                    key,
+                    MAX_COORDINATOR_KEYS,
+                )
 
         # Record the push time so the health-check can detect a stale device.
         self._last_push = dt_util.utcnow()

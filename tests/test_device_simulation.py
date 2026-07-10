@@ -117,7 +117,7 @@ async def test_partial_status_only(device: WiCANDeviceSimulator) -> None:
     await device.async_setup()
     resp = await device.push_and_settle(device.status(batt_voltage="11.9V"))
     assert resp.status == HTTPStatus.NO_CONTENT
-    state = device.hass.states.get("sensor.wican_sim_batt_voltage")
+    state = device.hass.states.get("sensor.wican_sim_battery_voltage")
     assert state is not None
     assert state.state == "11.9"
 
@@ -171,7 +171,7 @@ async def test_battery_voltage_formats(device: WiCANDeviceSimulator) -> None:
         (13.2, "13.2"),
     ):
         await device.push_and_settle(device.status(batt_voltage=raw_value))
-        state = device.hass.states.get("sensor.wican_sim_batt_voltage")
+        state = device.hass.states.get("sensor.wican_sim_battery_voltage")
         assert state.state == expected
 
 
@@ -192,7 +192,7 @@ async def test_hostile_value_types_do_not_crash(device: WiCANDeviceSimulator) ->
     # The valid sibling value in the same push was still applied...
     assert device.hass.states.get("sensor.wican_sim_uptime").state == "12345"
     # ...while the hostile values were dropped rather than written.
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unknown"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unknown"
 
 
 async def test_unicode_and_special_chars(device: WiCANDeviceSimulator) -> None:
@@ -247,7 +247,7 @@ async def test_rapid_successive_pushes(device: WiCANDeviceSimulator) -> None:
     await device.hass.async_block_till_done()
     await device.coordinator.async_refresh()
     await device.hass.async_block_till_done()
-    state = device.hass.states.get("sensor.wican_sim_batt_voltage")
+    state = device.hass.states.get("sensor.wican_sim_battery_voltage")
     assert state.state == "12.9"
 
 
@@ -294,30 +294,30 @@ async def test_device_goes_unavailable_then_recovers(
     """Entities go unavailable when the device stops pushing, then recover."""
     await device.async_setup()
     await device.push_and_settle(device.status(batt_voltage="12.4V"))
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.4"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.4"
 
     # Device stops pushing -> the health-check marks it stale.
     device.go_stale()
     await device.coordinator.async_refresh()
     await device.hass.async_block_till_done()
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unavailable"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unavailable"
     assert device.coordinator.last_update_success is False
 
     # A fresh push restores availability.
     await device.push_and_settle(device.status(batt_voltage="12.7V"))
     assert device.coordinator.last_update_success is True
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.7"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.7"
 
 
 async def test_binary_sensor_truthiness(device: WiCANDeviceSimulator) -> None:
     """ECU/BLE binary sensors interpret the device's truthy strings."""
     await device.async_setup()
     await device.push_and_settle(device.status(ecu_status="online", ble_status="enable"))
-    assert device.hass.states.get("binary_sensor.wican_sim_ecu_status").state == "on"
-    assert device.hass.states.get("binary_sensor.wican_sim_ble_status").state == "on"
+    assert device.hass.states.get("binary_sensor.wican_sim_ecu_online").state == "on"
+    assert device.hass.states.get("binary_sensor.wican_sim_bluetooth_enabled").state == "on"
 
     await device.push_and_settle(device.status(ecu_status="Offline", ble_status="disabled"))
-    assert device.hass.states.get("binary_sensor.wican_sim_ecu_status").state == "off"
+    assert device.hass.states.get("binary_sensor.wican_sim_ecu_online").state == "off"
 
 
 # ===================================================================
@@ -329,6 +329,7 @@ def _mock_session_response(status: int, text: str = "OK") -> Mock:
     resp = Mock()
     resp.status = status
     resp.text = AsyncMock(return_value=text)
+    resp.read = AsyncMock(return_value=text.encode())
     return resp
 
 

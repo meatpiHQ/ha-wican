@@ -414,3 +414,57 @@ async def test_tracker_device_info_matches_shared_entity_info(
     assert tracker_info["identifiers"] == {
         ("wican", entry.data.get("device_id") or entry.entry_id),
     }
+
+
+async def test_device_tracker_restore_rejects_out_of_range_coordinates(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A corrupt restored location (lat=999) is not resurrected.
+
+    Regression (L5): restore only suppressed parse errors; live fixes
+    validate range but restored values skipped that gate.
+    """
+    from unittest.mock import Mock, patch
+
+    from custom_components.wican.device_tracker import WiCANDeviceTrackerEntity
+
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity = WiCANDeviceTrackerEntity(mock_config_entry)
+    entity.hass = hass
+    mock_state = Mock()
+    mock_state.attributes = {"latitude": 999.0, "longitude": 20.0}
+
+    with patch.object(entity, "async_get_last_state", return_value=mock_state):
+        await entity.async_added_to_hass()
+
+    assert entity.latitude is None
+    assert entity.longitude is None
+
+
+async def test_device_tracker_restore_accepts_valid_coordinates(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A sane restored location comes back."""
+    from unittest.mock import Mock, patch
+
+    from custom_components.wican.device_tracker import WiCANDeviceTrackerEntity
+
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity = WiCANDeviceTrackerEntity(mock_config_entry)
+    entity.hass = hass
+    mock_state = Mock()
+    mock_state.attributes = {"latitude": -37.81, "longitude": 144.96}
+
+    with patch.object(entity, "async_get_last_state", return_value=mock_state):
+        await entity.async_added_to_hass()
+
+    assert entity.latitude == -37.81
+    assert entity.longitude == 144.96

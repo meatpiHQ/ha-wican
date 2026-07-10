@@ -704,7 +704,7 @@ async def test_sensor_invalid_voltage_format(
         await client.post(f"/api/webhook/{webhook_id}", json=data)
         await hass.async_block_till_done()
 
-        batt_voltage_state = hass.states.get("sensor.wican_device_batt_voltage")
+        batt_voltage_state = hass.states.get("sensor.wican_device_battery_voltage")
         # Normalization should handle invalid values gracefully
         # Invalid values pass through as-is
         assert batt_voltage_state.state in (invalid_voltage, "unknown", expected)

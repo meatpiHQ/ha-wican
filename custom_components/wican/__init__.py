@@ -260,21 +260,22 @@ def _normalize_ip(ip: str | None) -> str | None:
 
 
 def _extract_request_ip(request: Request) -> str | None:
-    """Best-effort extraction of the originating peer IP address."""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        first = forwarded_for.split(",")[0].strip()
-        if first:
-            return _normalize_ip(first)
+    """Best-effort extraction of the originating peer IP address.
+
+    Deliberately relies on ``request.remote``: Home Assistant's HTTP
+    middleware already resolves X-Forwarded-For, and only for proxies the
+    user configured as trusted. Parsing the header here would let any
+    client that learns the webhook path redirect webhook registration and
+    control-API traffic by spoofing it.
+    """
+    if request.remote:
+        return _normalize_ip(request.remote)
 
     transport = request.transport
     if transport is not None:
         peername = transport.get_extra_info("peername")
         if isinstance(peername, (tuple, list)) and peername:
             return _normalize_ip(peername[0])
-
-    if request.remote:
-        return _normalize_ip(request.remote)
 
     return None
 
@@ -796,9 +797,14 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: WiCANConfigEntry,
 ) -> bool:
     """Unload a config entry."""
-    webhook.async_unregister(hass, entry.runtime_data.webhook_id)
-    _clear_webhook_repair(hass, entry)
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    # Platforms first: if their unload fails the entry stays loaded, and
+    # unregistering the webhook up front would leave it loaded but deaf
+    # to pushes.
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        webhook.async_unregister(hass, entry.runtime_data.webhook_id)
+        _clear_webhook_repair(hass, entry)
+    return unload_ok
 
 
 async def async_remove_entry(
@@ -1230,6 +1236,10 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
                         )
 
                         if resp.status < 300:
+                            # Consume the (tiny) body so the connection
+                            # returns to the pool instead of lingering
+                            # until GC ("Unclosed response" churn).
+                            await resp.read()
                             _LOGGER.info(
                                 "WiCAN webhook registered successfully at %s (attempt %d/%d)",
                                 ep,

@@ -193,7 +193,7 @@ async def test_press_without_api_raises(
         )
 
 
-REFRESH_DEFS_ENTITY = "button.wican_device_refresh_definitions"
+REFRESH_DEFS_ENTITY = "button.wican_device_refresh_integration_definitions"
 
 
 async def test_refresh_definitions_button_on_every_device(

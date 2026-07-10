@@ -31,7 +31,7 @@ async def _assert_alive(hass: HomeAssistant, sim: WiCANDeviceSimulator) -> None:
     sim._client = None
     resp = await sim.push_and_settle(sim.status(batt_voltage="12.2V"))
     assert resp.status == 204
-    assert float(hass.states.get("sensor.wican_sim_batt_voltage").state) == 12.2
+    assert float(hass.states.get("sensor.wican_sim_battery_voltage").state) == 12.2
 
 
 async def test_gzip_push_round_trip(hass: HomeAssistant, hass_client: Any) -> None:
@@ -44,7 +44,7 @@ async def test_gzip_push_round_trip(hass: HomeAssistant, hass_client: Any) -> No
     await hass.async_block_till_done()
 
     assert resp.status == 204
-    assert float(hass.states.get("sensor.wican_sim_batt_voltage").state) == 12.9
+    assert float(hass.states.get("sensor.wican_sim_battery_voltage").state) == 12.9
     assert hass.states.get("sensor.wican_sim_soc") is not None
     # Compression is worthwhile: the wire body is smaller than the JSON.
     assert len(body) < len(json.dumps(payload))
@@ -128,7 +128,7 @@ async def test_plain_pushes_unaffected(hass: HomeAssistant, hass_client: Any) ->
     )
 
     assert resp.status == 204
-    assert float(hass.states.get("sensor.wican_sim_batt_voltage").state) == 12.7
+    assert float(hass.states.get("sensor.wican_sim_battery_voltage").state) == 12.7
     assert hass.states.get("sensor.wican_sim_rpm") is not None
 
 

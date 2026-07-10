@@ -242,6 +242,7 @@ async def test_webhook_registration_raises_and_clears_repair(
         ok_response = Mock()
         ok_response.status = int(HTTPStatus.OK)
         ok_response.text = AsyncMock(return_value="OK")
+        ok_response.read = AsyncMock(return_value=b"")
         mock_session.post.side_effect = None
         mock_session.post.return_value = ok_response
         await _async_register_webhook_on_device(hass, entry, max_retries=1)

@@ -82,7 +82,7 @@ async def test_legacy_wican_telemetry_but_no_buttons(
     assert resp.status == 204
 
     prefix = _entity_prefix(sim)
-    battery = hass.states.get(f"sensor.{prefix}_batt_voltage")
+    battery = hass.states.get(f"sensor.{prefix}_battery_voltage")
     assert battery is not None
     assert float(battery.state) == 12.6
     assert hass.states.get(f"sensor.{prefix}_rpm") is not None
@@ -141,7 +141,7 @@ async def test_espnetlink_gps_device(
     assert tracker.attributes["longitude"] == pytest.approx(2.2945)
 
     # No OBD payload → no PID sensors; unknown LTE keys are ignored safely.
-    assert hass.states.get(f"binary_sensor.{prefix}_ecu_status") is None
+    assert hass.states.get(f"binary_sensor.{prefix}_ecu_online") is None
 
     # Device type inferred from the hardware string; V6 control available.
     assert sim.entry.data[CONF_DEVICE_TYPE] == DEVICE_TYPE_ESPNETLINK
@@ -167,7 +167,7 @@ async def test_generic_future_meatpi_device(
     resp = await sim.push_and_settle(sim.status())
     assert resp.status == 204
 
-    assert hass.states.get(f"sensor.{prefix}_batt_voltage") is not None
+    assert hass.states.get(f"sensor.{prefix}_battery_voltage") is not None
     assert hass.states.get(f"button.{prefix}_restart") is not None
     # "MeatPi ProtoBoard X" contains "pro..." — must not become wican_pro.
     assert sim.entry.data[CONF_DEVICE_TYPE] == DEVICE_TYPE_GENERIC
@@ -263,7 +263,7 @@ async def test_downgrade_to_legacy_disables_control(
         await _press(hass, f"button.{prefix}_restart")
     # ...and telemetry keeps flowing.
     await sim.push_and_settle(sim.status(batt_voltage="11.9V"))
-    battery = hass.states.get(f"sensor.{prefix}_batt_voltage")
+    battery = hass.states.get(f"sensor.{prefix}_battery_voltage")
     assert float(battery.state) == 11.9
 
 
@@ -290,7 +290,7 @@ async def test_control_failures_surface_cleanly(
     # The integration is fully alive afterwards: telemetry still updates.
     sim.api.mode = "ok"
     await sim.push_and_settle(sim.status(batt_voltage="12.1V"))
-    battery = hass.states.get(f"sensor.{prefix}_batt_voltage")
+    battery = hass.states.get(f"sensor.{prefix}_battery_voltage")
     assert float(battery.state) == 12.1
 
     await _press(hass, f"button.{prefix}_restart")
@@ -322,7 +322,7 @@ async def test_non_v6_answers_probe_as_legacy(
     assert hass.states.get(f"button.{prefix}_restart") is None
 
     await sim.push_and_settle(sim.status())
-    assert hass.states.get(f"sensor.{prefix}_batt_voltage") is not None
+    assert hass.states.get(f"sensor.{prefix}_battery_voltage") is not None
 
 
 async def test_hostile_component_flood_is_capped(
@@ -369,7 +369,7 @@ async def test_malformed_status_shapes_probe_as_legacy(
     assert not sim.entry.runtime_data.capabilities.has_http_api
     await sim.push_and_settle(sim.status())
     prefix = _entity_prefix(sim)
-    assert hass.states.get(f"sensor.{prefix}_batt_voltage") is not None
+    assert hass.states.get(f"sensor.{prefix}_battery_voltage") is not None
 
 
 async def test_settings_garbage_still_yields_v6_restart(
@@ -408,7 +408,7 @@ async def test_firmware_flapping_probes_coalesce(
     # setup probe; the integration is alive and consistent afterwards.
     assert sim.api.probe_calls <= 12
     await sim.push_and_settle(sim.status(batt_voltage="12.4V"))
-    battery = hass.states.get(f"sensor.{prefix}_batt_voltage")
+    battery = hass.states.get(f"sensor.{prefix}_battery_voltage")
     assert float(battery.state) == 12.4
 
 
@@ -425,7 +425,7 @@ async def test_refresh_definitions_button_on_every_device_type(
     """Every MeatPi device type gets the refresh-definitions button."""
     sim = await _sim(hass, hass_client, aioclient_mock, preset)
     prefix = _entity_prefix(sim)
-    assert hass.states.get(f"button.{prefix}_refresh_definitions") is not None
+    assert hass.states.get(f"button.{prefix}_refresh_integration_definitions") is not None
 
 
 async def test_two_device_types_are_isolated(
@@ -458,7 +458,7 @@ async def test_two_device_types_are_isolated(
     assert legacy.api.restart_calls == 0
 
     # Telemetry stayed separate: only the ESPNetlink tracker got a GPS fix.
-    assert hass.states.get(f"sensor.{legacy_prefix}_batt_voltage") is not None
+    assert hass.states.get(f"sensor.{legacy_prefix}_battery_voltage") is not None
     netlink_tracker = hass.states.get(f"device_tracker.{netlink_prefix}_location")
     legacy_tracker = hass.states.get(f"device_tracker.{legacy_prefix}_location")
     assert netlink_tracker.attributes.get("latitude") == pytest.approx(51.5)

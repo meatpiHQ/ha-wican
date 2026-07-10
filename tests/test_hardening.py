@@ -233,7 +233,7 @@ async def test_restored_garbage_status_value_is_dropped(
         hass,
         (
             (
-                State("sensor.wican_sim_batt_voltage", "garbage"),
+                State("sensor.wican_sim_battery_voltage", "garbage"),
                 {"native_value": "garbage", "native_unit_of_measurement": "V"},
             ),
         ),
@@ -242,7 +242,7 @@ async def test_restored_garbage_status_value_is_dropped(
     device = WiCANDeviceSimulator(hass, hass_client)
     await device.async_setup()
 
-    state = hass.states.get("sensor.wican_sim_batt_voltage")
+    state = hass.states.get("sensor.wican_sim_battery_voltage")
     assert state is not None
     assert state.state == "unknown"
 
@@ -385,3 +385,32 @@ async def test_unload_during_running_registration_is_clean(
 
     # The trailing re-run must not have happened after the unload.
     assert calls == 1
+
+
+async def test_failed_platform_unload_keeps_webhook_registered(
+    device: WiCANDeviceSimulator, hass: HomeAssistant,
+) -> None:
+    """A failed platform unload leaves the entry loaded AND reachable.
+
+    Regression (L9): the webhook was unregistered before platforms
+    unloaded; if that unload failed, the entry stayed loaded but was
+    deaf to pushes.
+    """
+    from custom_components.wican import async_unload_entry
+
+    await device.async_setup()
+    entry = device.entry
+    webhook_id = entry.data["webhook_id"]
+    assert webhook_id in hass.data["webhook"]
+
+    with patch.object(
+        hass.config_entries, "async_unload_platforms", return_value=False,
+    ):
+        assert await async_unload_entry(hass, entry) is False
+
+    # Entry still loaded and still receiving pushes.
+    assert webhook_id in hass.data["webhook"]
+    resp = await device.push(
+        {"status": {"device_id": device.device_id, "uptime": "ok"}},
+    )
+    assert resp.status == HTTPStatus.NO_CONTENT

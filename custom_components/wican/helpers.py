@@ -2,24 +2,15 @@
 
 from __future__ import annotations
 
-from functools import wraps
 import logging
-from typing import TYPE_CHECKING, Any, Concatenate
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import webhook
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from yarl import URL
 
-from .const import DOMAIN
-from .exceptions import WiCANConnectionError, WiCANError
-
 if TYPE_CHECKING:
-    from collections.abc import Callable, Coroutine
-
     from homeassistant.core import HomeAssistant
-
-    from .entity import WiCANEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,12 +30,16 @@ async def async_read_capped(response: Any, max_bytes: int) -> bytes | None:
     """
     declared = response.headers.get("Content-Length")
     if declared and declared.isdigit() and int(declared) > max_bytes:
+        response.close()
         return None
     chunks: list[bytes] = []
     total = 0
     async for chunk in response.content.iter_chunked(_READ_CHUNK_BYTES):
         total += len(chunk)
         if total > max_bytes:
+            # The rest of the body is deliberately unread: drop the
+            # connection rather than leave it half-consumed in the pool.
+            response.close()
             return None
         chunks.append(chunk)
     return b"".join(chunks)
@@ -212,53 +207,3 @@ def resolve_webhook_url(
         fallback_url=fallback_url,
         require_current_request=require_current_request,
     )
-
-
-def wican_exception_handler[WiCANEntityT: "WiCANEntity"](
-    func: Callable[Concatenate[WiCANEntityT, ...], Coroutine[Any, Any, Any]],
-) -> Callable[Concatenate[WiCANEntityT, ...], Coroutine[Any, Any, None]]:
-    """Decorate WiCAN calls to handle exceptions consistently.
-
-    This decorator provides centralized error handling for entity methods,
-    converting WiCAN-specific exceptions into HomeAssistant exceptions with
-    proper translation support.
-
-    Usage:
-        @wican_exception_handler
-        async def async_turn_on(self, **kwargs) -> None:
-            # Implementation that may raise WiCANError
-    """
-
-    @wraps(func)
-    async def handler(self: WiCANEntityT, *args: Any, **kwargs: Any) -> None:
-        """Handle exceptions from WiCAN operations."""
-        try:
-            await func(self, *args, **kwargs)
-            # Update coordinator listeners after successful operation
-            if hasattr(self, "coordinator"):
-                self.coordinator.async_update_listeners()
-        except WiCANConnectionError as error:
-            # Connection errors - mark coordinator as failed
-            if hasattr(self, "coordinator"):
-                self.coordinator.last_update_success = False
-                self.coordinator.async_update_listeners()
-            _LOGGER.exception("Connection error in %s", func.__name__)
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="connection_error",
-                translation_placeholders={"error": str(error)},
-            ) from error
-        except WiCANError as error:
-            # Generic WiCAN errors
-            _LOGGER.exception("WiCAN error in %s", func.__name__)
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="wican_error",
-                translation_placeholders={"error": str(error)},
-            ) from error
-        except Exception:
-            # Unexpected errors - log and re-raise
-            _LOGGER.exception("Unexpected error in %s", func.__name__)
-            raise
-
-    return handler

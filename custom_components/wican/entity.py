@@ -36,14 +36,17 @@ class WiCANEntity(CoordinatorEntity[WiCANDataUpdateCoordinator]):
         self.entity_description = entity_description
         self.webhook_id = config_entry.runtime_data.webhook_id
         # An explicit description name (dynamic PID sensors, catalog-defined
-        # sensors) wins; otherwise fall back to the key (static descriptions
-        # carry a translation_key and leave name as the UNDEFINED sentinel).
+        # sensors) wins. Static descriptions carry a translation_key and
+        # MUST NOT get _attr_name set — Entity resolves _attr_name before
+        # consulting platform translations, so setting it here would show
+        # users raw keys like "batt_voltage" instead of "Battery Voltage".
         description_name = entity_description.name
-        self._attr_name = (
-            description_name
-            if isinstance(description_name, str)
-            else entity_description.key
-        )
+        if isinstance(description_name, str):
+            self._attr_name = description_name
+        elif not getattr(entity_description, "translation_key", None):
+            # Neither an explicit name nor a translation: fall back to the
+            # key rather than leaving the entity unnamed.
+            self._attr_name = entity_description.key
         self._attr_device_info = DeviceInfo(
             connections={(DOMAIN, config_entry.entry_id)},
             manufacturer=MANUFACTURER,

@@ -113,6 +113,11 @@ PARAMS_MAX_FIELD_LENGTH = 256
 # payload is a few KiB.
 MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024
 
+# Cap on distinct top-level payload keys retained by the coordinator: a
+# healthy device sends a handful (status, autopid_data, config, gps, ...);
+# a buggy firmware emitting rotating keys must not grow memory forever.
+MAX_COORDINATOR_KEYS = 32
+
 # Device API levels (capability probe result)
 API_LEVEL_LEGACY = 0  # webhook-only firmware (pre-V6)
 API_LEVEL_V6 = 6  # full /api/* HTTP surface

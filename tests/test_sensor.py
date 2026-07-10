@@ -27,7 +27,7 @@ async def test_sensor_entities_created(
     assert wifi_mode is not None
     assert wifi_mode.unique_id.endswith("_wifi_mode")
 
-    batt_voltage = entity_registry.async_get("sensor.wican_device_batt_voltage")
+    batt_voltage = entity_registry.async_get("sensor.wican_device_battery_voltage")
     assert batt_voltage is not None
     assert batt_voltage.unique_id.endswith("_batt_voltage")
 
@@ -61,7 +61,7 @@ async def test_sensor_states_update_from_webhook(
     assert wifi_mode_state is not None
     assert wifi_mode_state.state == "Station"
 
-    batt_voltage_state = hass.states.get("sensor.wican_device_batt_voltage")
+    batt_voltage_state = hass.states.get("sensor.wican_device_battery_voltage")
     assert batt_voltage_state is not None
     # Should normalize "12.5V" to 12.5
     assert batt_voltage_state.state == "12.5"
@@ -165,7 +165,7 @@ async def test_sensor_voltage_normalization(
         await client.post(f"/api/webhook/{webhook_id}", json=data)
         await hass.async_block_till_done()
 
-        batt_voltage_state = hass.states.get("sensor.wican_device_batt_voltage")
+        batt_voltage_state = hass.states.get("sensor.wican_device_battery_voltage")
         assert batt_voltage_state.state == expected_state
 
 
@@ -176,7 +176,7 @@ async def test_batt_voltage_sets_decimal_display_precision(
     """Test battery voltage sensor requests decimal display precision."""
     entity_registry = er.async_get(hass)
 
-    batt_voltage = entity_registry.async_get("sensor.wican_device_batt_voltage")
+    batt_voltage = entity_registry.async_get("sensor.wican_device_battery_voltage")
     assert batt_voltage is not None
     assert batt_voltage.options.get("sensor", {}).get("suggested_display_precision") == 1
 
@@ -188,7 +188,7 @@ async def test_sensor_state_restoration(
     """Test sensor state is restored on startup."""
     # Store a state before setup
     hass.states.async_set(
-        "sensor.wican_device_batt_voltage",
+        "sensor.wican_device_battery_voltage",
         "13.2",
         {"unit_of_measurement": "V"},
     )
@@ -212,7 +212,7 @@ async def test_sensor_state_restoration(
         await hass.async_block_till_done()
     
     # Check that states were restored
-    batt_voltage = hass.states.get("sensor.wican_device_batt_voltage")
+    batt_voltage = hass.states.get("sensor.wican_device_battery_voltage")
     assert batt_voltage is not None
     assert batt_voltage.state == "13.2"
     
@@ -294,7 +294,7 @@ async def test_sensor_state_restoration_with_normalization(hass: HomeAssistant) 
         await hass.async_block_till_done()
     
     # Check that sensor was created and has restored state
-    state = hass.states.get("sensor.wican_test_batt_voltage")
+    state = hass.states.get("sensor.wican_test_battery_voltage")
     assert state is not None
 
 
@@ -326,7 +326,7 @@ async def test_missing_key_sensor_goes_unavailable_when_stale(
         f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=mock_webhook_data,
     )
     await hass.async_block_till_done()
-    live_state = hass.states.get("sensor.wican_device_batt_voltage").state
+    live_state = hass.states.get("sensor.wican_device_battery_voltage").state
     assert live_state not in ("unknown", "unavailable")
 
     # Partial push replaces "status" without batt_voltage: the sensor
@@ -336,7 +336,7 @@ async def test_missing_key_sensor_goes_unavailable_when_stale(
         json={"status": {"device_id": "test_device_123", "uptime": "01:00:05"}},
     )
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.wican_device_batt_voltage").state == live_state
+    assert hass.states.get("sensor.wican_device_battery_voltage").state == live_state
 
     # Device goes silent past the staleness window: the sensor must flip
     # to unavailable together with its siblings.
@@ -345,7 +345,7 @@ async def test_missing_key_sensor_goes_unavailable_when_stale(
     await coordinator.async_refresh()
     await hass.async_block_till_done()
     assert (
-        hass.states.get("sensor.wican_device_batt_voltage").state == "unavailable"
+        hass.states.get("sensor.wican_device_battery_voltage").state == "unavailable"
     )
     assert hass.states.get("sensor.wican_device_uptime").state == "unavailable"
 
@@ -354,7 +354,7 @@ async def test_missing_key_sensor_goes_unavailable_when_stale(
         f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=mock_webhook_data,
     )
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.wican_device_batt_voltage").state == live_state
+    assert hass.states.get("sensor.wican_device_battery_voltage").state == live_state
 
 
 async def test_missing_pid_sensor_goes_unavailable_when_stale(
@@ -441,8 +441,27 @@ async def test_last_seen_sensor_tracks_pushes_and_survives_staleness(
     await hass.async_block_till_done()
 
     assert (
-        hass.states.get("sensor.wican_device_batt_voltage").state == "unavailable"
+        hass.states.get("sensor.wican_device_battery_voltage").state == "unavailable"
     )
     last_seen_state = hass.states.get("sensor.wican_device_last_seen")
     assert last_seen_state.state != "unavailable"
     assert dt_util.parse_datetime(last_seen_state.state) is not None
+
+
+async def test_static_entities_use_translated_names(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Static entities show their translated names, not raw keys.
+
+    Regression (L11): _attr_name was always set from the description
+    key, and Entity resolves _attr_name BEFORE platform translations —
+    users saw "batt_voltage" instead of "Battery Voltage" everywhere.
+    """
+    state = hass.states.get("sensor.wican_device_battery_voltage")
+    assert state is not None
+    assert state.attributes["friendly_name"] == "WiCAN Device Battery Voltage"
+
+    ble = hass.states.get("binary_sensor.wican_device_bluetooth_enabled")
+    assert ble is not None
+    assert ble.attributes["friendly_name"] == "WiCAN Device Bluetooth Enabled"

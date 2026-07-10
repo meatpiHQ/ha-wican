@@ -45,13 +45,13 @@ async def test_bad_voltage_does_not_block_other_entities(
 
     # Siblings in the same push were applied.
     assert device.hass.states.get("sensor.wican_sim_vpn_status").state == "Connected"
-    assert device.hass.states.get("binary_sensor.wican_sim_ecu_status").state == "on"
+    assert device.hass.states.get("binary_sensor.wican_sim_ecu_online").state == "on"
     # The unusable voltage was dropped, not written and not crashed on.
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unknown"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unknown"
 
     # The device recovers: the next good reading flows through.
     await device.push_and_settle(device.status(batt_voltage="12.4V"))
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.4"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.4"
 
 
 async def test_garbage_voltage_after_good_value_goes_unknown(
@@ -60,13 +60,13 @@ async def test_garbage_voltage_after_good_value_goes_unknown(
     """A good value followed by garbage yields 'unknown', then recovers."""
     await device.async_setup()
     await device.push_and_settle(device.status(batt_voltage="12.8V"))
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.8"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.8"
 
     await device.push_and_settle(device.status(batt_voltage="N/A"))
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unknown"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unknown"
 
     await device.push_and_settle(device.status(batt_voltage="13.1V"))
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "13.1"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "13.1"
 
 
 async def test_overlong_status_string_is_truncated(
@@ -83,7 +83,7 @@ async def test_overlong_status_string_is_truncated(
     state = device.hass.states.get("sensor.wican_sim_vpn_status")
     assert state.state == "x" * 255
     # The sibling in the same push still updated.
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.0"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.0"
 
 
 async def test_megabyte_status_value_is_survivable(
@@ -144,7 +144,7 @@ async def test_nonfinite_floats_injected_internally_are_dropped(
     )
     await device.hass.async_block_till_done()
 
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unknown"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unknown"
     assert device.hass.states.get("sensor.wican_sim_uptime").state == "up"
     assert device.hass.states.get("sensor.wican_sim_speed").state == "55"
     # The non-finite RPM was dropped: the sensor shows no value rather than
@@ -197,7 +197,7 @@ async def test_bool_values_do_not_break_numeric_sensors(
     await device.async_setup()
     resp = await device.push_and_settle(device.status(batt_voltage=True))
     assert resp.status == HTTPStatus.NO_CONTENT
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unknown"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unknown"
 
 
 async def test_unsatisfiable_device_classes_are_ignored(
@@ -242,8 +242,8 @@ async def test_null_values_everywhere(device: WiCANDeviceSimulator) -> None:
     )
     assert resp.status == HTTPStatus.NO_CONTENT
     # Null voltage clears the reading; the binary sensor keeps its last state.
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unknown"
-    assert device.hass.states.get("binary_sensor.wican_sim_ecu_status").state == "on"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unknown"
+    assert device.hass.states.get("binary_sensor.wican_sim_ecu_online").state == "on"
 
 
 async def test_binary_sensor_scalar_interpretations(
@@ -252,14 +252,14 @@ async def test_binary_sensor_scalar_interpretations(
     """Binary sensors interpret scalars; non-scalars keep the last state."""
     await device.async_setup()
     await device.push_and_settle(device.status(ecu_status=1))
-    assert device.hass.states.get("binary_sensor.wican_sim_ecu_status").state == "on"
+    assert device.hass.states.get("binary_sensor.wican_sim_ecu_online").state == "on"
 
     await device.push_and_settle(device.status(ecu_status={"nested": True}))
     # Non-scalar says nothing: state unchanged.
-    assert device.hass.states.get("binary_sensor.wican_sim_ecu_status").state == "on"
+    assert device.hass.states.get("binary_sensor.wican_sim_ecu_online").state == "on"
 
     await device.push_and_settle(device.status(ecu_status=0))
-    assert device.hass.states.get("binary_sensor.wican_sim_ecu_status").state == "off"
+    assert device.hass.states.get("binary_sensor.wican_sim_ecu_online").state == "off"
 
 
 # ===================================================================
@@ -343,7 +343,7 @@ async def test_hostile_device_info_fields_are_not_persisted(
 
     # The device is still fully functional.
     await device.push_and_settle(device.status(batt_voltage="12.9V"))
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.9"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.9"
 
 
 async def test_numeric_fw_version_is_stored_as_string(
@@ -486,7 +486,7 @@ async def test_deeply_nested_json_is_survivable(
 
     good = await device.push_and_settle(device.status(batt_voltage="12.3V"))
     assert good.status == HTTPStatus.NO_CONTENT
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.3"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.3"
 
 
 async def test_wrong_content_type_with_valid_json_is_tolerated(
@@ -500,7 +500,7 @@ async def test_wrong_content_type_with_valid_json_is_tolerated(
     )
     assert resp.status == HTTPStatus.NO_CONTENT
     await device.hass.async_block_till_done()
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.7"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.7"
 
 
 async def test_binary_garbage_body_is_rejected_cleanly(
@@ -633,7 +633,7 @@ async def test_concurrent_pushes_do_not_corrupt_state(
     assert all(r.status == HTTPStatus.NO_CONTENT for r in responses)
     await device.hass.async_block_till_done()
 
-    state = device.hass.states.get("sensor.wican_sim_batt_voltage")
+    state = device.hass.states.get("sensor.wican_sim_battery_voltage")
     assert state.state in {v.rstrip("V") for v in voltages}
     assert device.coordinator.last_update_success is True
 
@@ -651,7 +651,7 @@ async def test_reload_under_fire(device: WiCANDeviceSimulator) -> None:
     assert device.hass.states.get("sensor.wican_sim_rpm").state == "1300"
     # Status entities also keep flowing after the reload.
     await device.push_and_settle(device.status(batt_voltage="12.1V"))
-    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "12.1"
+    assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.1"
 
 
 async def test_unload_cleans_dynamic_pid_state(
