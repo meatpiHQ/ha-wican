@@ -659,7 +659,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         request: Request,
     ) -> Response:
         """Handle incoming WiCAN webhook request."""
-        _LOGGER.info("Received WiCAN webhook: %s", webhook_id)
+        _LOGGER.info("Received MeatPi device webhook: %s", webhook_id)
         try:
             data = await _async_read_webhook_json(request)
             _LOGGER.debug("Webhook payload: %s", data)
@@ -669,7 +669,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
             )
         except _WebhookBodyTooLargeError:
             _LOGGER.warning(
-                "Rejecting oversized WiCAN webhook body (> %d bytes)",
+                "Rejecting oversized device webhook body (> %d bytes)",
                 MAX_WEBHOOK_BODY_BYTES,
             )
             return Response(
@@ -682,7 +682,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
             # read), or transport garbage. One clean 422 for all of it; a
             # broken device must never wedge the webhook.
             _LOGGER.warning(
-                "Received WiCAN webhook with an invalid or undecodable body "
+                "Received device webhook with an invalid or undecodable body "
                 "(%s: %s)",
                 type(err).__name__,
                 err,
@@ -710,7 +710,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         # malformed device (or unrelated caller) cannot crash the handler.
         if not isinstance(data, dict):
             _LOGGER.warning(
-                "Received WiCAN webhook with non-object JSON payload (%s)",
+                "Received device webhook with non-object JSON payload (%s)",
                 type(data).__name__,
             )
             return Response(
@@ -1164,7 +1164,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
         return False
 
     _LOGGER.info(
-        "Registering WiCAN webhook %s with interval %ss",
+        "Registering device webhook %s with interval %ss",
         payload["url"],
         post_interval,
     )
@@ -1241,7 +1241,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
                             # until GC ("Unclosed response" churn).
                             await resp.read()
                             _LOGGER.info(
-                                "WiCAN webhook registered successfully at %s (attempt %d/%d)",
+                                "Device webhook registered successfully at %s (attempt %d/%d)",
                                 ep,
                                 attempt + 1,
                                 max_retries,
@@ -1269,7 +1269,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
 
                         text = await resp.text()
                         _LOGGER.warning(
-                            "WiCAN webhook registration failed with HTTP %d at %s: %s (attempt %d/%d)",
+                            "Device webhook registration failed with HTTP %d at %s: %s (attempt %d/%d)",
                             resp.status,
                             ep,
                             text,
@@ -1279,7 +1279,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
                     except ClientError as err:
                         # Keep trying other endpoints if one fails to resolve/connect
                         _LOGGER.warning(
-                            "WiCAN webhook registration connection error at %s: %s (attempt %d/%d)",
+                            "Device webhook registration connection error at %s: %s (attempt %d/%d)",
                             ep,
                             err,
                             attempt + 1,
@@ -1291,35 +1291,35 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
 
         except TimeoutError:
             _LOGGER.warning(
-                "WiCAN webhook registration timeout after %ds (attempt %d/%d)",
+                "Device webhook registration timeout after %ds (attempt %d/%d)",
                 WEBHOOK_REGISTRATION_TIMEOUT,
                 attempt + 1,
                 max_retries,
             )
         except _WebhookEndpointsFailedError:
             _LOGGER.debug(
-                "All WiCAN endpoints failed for entry %s on attempt %d/%d",
+                "All device endpoints failed for entry %s on attempt %d/%d",
                 entry.entry_id,
                 attempt + 1,
                 max_retries,
             )
         except ClientResponseError as err:
             _LOGGER.warning(
-                "WiCAN webhook registration HTTP error: %s (attempt %d/%d)",
+                "Device webhook registration HTTP error: %s (attempt %d/%d)",
                 err,
                 attempt + 1,
                 max_retries,
             )
         except ClientError as err:
             _LOGGER.warning(
-                "WiCAN webhook registration connection error: %s (attempt %d/%d)",
+                "Device webhook registration connection error: %s (attempt %d/%d)",
                 err,
                 attempt + 1,
                 max_retries,
             )
         except Exception:
             _LOGGER.exception(
-                "WiCAN webhook registration unexpected error (attempt %d/%d)",
+                "Device webhook registration unexpected error (attempt %d/%d)",
                 attempt + 1,
                 max_retries,
             )

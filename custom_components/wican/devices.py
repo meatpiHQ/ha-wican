@@ -2,7 +2,7 @@
 
 MeatPi is the brand; each product (WiCAN OBD/USB/Pro, ESPNetlink, ...) is a
 device type described by a declarative profile. Adding a new product means
-adding a profile here (see notes/ADDING_A_DEVICE.md) — the rest of the
+adding a profile here (see notes/device-contract/ADDING_A_DEVICE.md) — the rest of the
 integration keys off the profile and the runtime capability probe.
 """
 

@@ -122,7 +122,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             mdns = user_input.get("mdns")
             host = user_input.get(CONF_HOST)
-            title = host or mdns or "WiCAN"
+            title = host or mdns or "MeatPi device"
 
             # Prevent duplicate manual setups of the same device. A manually
             # entered device has no MAC/device_id yet, so key off the normalized
@@ -287,7 +287,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="no_url_available")
 
             return self.async_create_entry(
-                title=self.discovered_name or "WiCAN",
+                title=self.discovered_name or "MeatPi device",
                 data={
                     k: v
                     for k, v in {
@@ -312,7 +312,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="zeroconf_confirm",
             description_placeholders={
-                "name": self.discovered_name or "WiCAN",
+                "name": self.discovered_name or "MeatPi device",
                 "url": self.discovered_mdns or self.discovered_host or "Unknown",
             },
         )

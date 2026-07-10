@@ -88,7 +88,11 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             device_class=UpdateDeviceClass.FIRMWARE,
         )
         super().__init__(config_entry, entity_description)
-        self._attr_title = "WiCAN Firmware"
+        # The update dialog's software name: use the product, not the brand
+        # of one product line (an ESPNetlink is not "WiCAN Firmware").
+        self._attr_title = (
+            f"{config_entry.runtime_data.device_profile.model} Firmware"
+        )
         self._github_coordinator = config_entry.runtime_data.github_coordinator
         self._update_in_progress = False
 

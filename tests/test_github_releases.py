@@ -91,7 +91,7 @@ async def test_github_coordinator_initialization(hass: HomeAssistant) -> None:
     coordinator = GitHubReleasesCoordinator(hass, stream="obd")
 
     assert coordinator is not None
-    assert coordinator.name == "WiCAN GitHub Releases"
+    assert coordinator.name == "MeatPi firmware releases"
     assert coordinator.update_interval.total_seconds() == 3600  # 1 hour
     assert coordinator._stream == "obd"
 

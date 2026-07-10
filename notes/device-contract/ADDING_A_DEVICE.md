@@ -5,7 +5,7 @@
 > **what the device firmware must implement** to work at all, and **what to
 > add in the integration** to give it first-class support.
 >
-> Companion docs: `MEATPI_INTEGRATION_PLAN.md` (architecture and decisions),
+> Companion docs: `../MEATPI_INTEGRATION_PLAN.md` (architecture and decisions),
 > `HTTP_API.md` (the V6 firmware API this contract builds on),
 > `DEVICE_ENDPOINTS.md` (the webhook contract in firmware-implementation
 > detail), `FIRMWARE_API_FEEDBACK.md` (requested firmware API additions).
@@ -91,18 +91,32 @@ Rules the firmware must follow:
 4. Values must be JSON scalars for anything that should become a sensor
    state. (The integration sanitizes garbage — non-finite numbers, nested
    objects, 255+ char strings — but firmware should not rely on that.)
-5. A `2xx` response means delivered; the device should track
-   `last_post`/`retries` and back off on failures.
+5. Responses from HA form a contract: `204` delivered; `403` identity
+   mismatch (stop — see rule 1); `413` body over the 2 MiB decompressed
+   cap; `422` invalid JSON; **`503` integration reloading — retry on the
+   next cycle**. Track `last_post`/`retries` and back off on repeated
+   failures.
+6. The body may be gzip-compressed (`Content-Encoding: gzip`) — useful
+   over LTE; HA inflates it against the same 2 MiB cap.
+7. Devices reachable over a VPN tunnel should include `vpn_ip` (private/
+   CGNAT address) and `vpn_status` in `status`: HA records the address as
+   the backup endpoint for webhook registration and control commands.
 
-**What the integration does with it:** entities update via the coordinator;
+**What the integration does with it:** entities update via the coordinator
+(at most 32 distinct top-level payload keys are retained per device);
 unknown keys under `autopid_data` become sensors dynamically (with
 unit/class from `config`); `gps` drives the device tracker; staleness
-(no push for `max(5×interval, 120 s)`) marks entities unavailable.
+(no push for `max(5×interval, 120 s)`) marks entities unavailable — except
+the "Last seen" diagnostic timestamp sensor, which keeps dating the stale
+readings and survives restarts.
 
 #### A4. OTA upload endpoint (optional, enables the update entity)
 
-Legacy WiCAN: `POST /upload/ota.bin` (multipart field `ota_file`).
-V6 firmware: `POST /api/ota/upload` (multipart `firmware` or raw body).
+The integration uploads to `POST /upload/ota.bin` (multipart field
+`ota_file`) — the legacy WiCAN route, which V6 firmware must keep serving.
+(V6 also exposes `POST /api/ota/upload`, but the integration does not call
+it yet; a V6-only product without the legacy route gets no working update
+entity today.)
 Firmware images must be published as GitHub release assets with
 predictable, product-unique names (see `FIRMWARE_DEVICE_TYPES.md` for the
 WiCAN naming scheme; new products must pick a disjoint pattern, e.g.
@@ -119,11 +133,13 @@ integration probes it and unlocks control entities:
 | `GET /api/settings` → `{"components":[{"name": ...}]}` | **Capability set.** Component names gate component-specific entities (e.g. `rtc_manager` → "Sync time" button). |
 | `POST /api/restart` | Restart button. |
 | `POST /api/rtc/sync` | Sync-time button (requires `rtc_manager`). |
-| `data_logger` component + `/api/logger`, `/api/fs/*` (or the `/api/logger/export` route, feedback ask #8) | **Offline history backfill**: rows logged to SD while away are imported into long-term statistics on reconnect (see `HISTORICAL_DATA_SYNC.md`). Any product with the data logger gets this for free. |
+| `data_logger` component + `/api/logger`, `/api/fs/*` (or the `/api/logger/export` route, feedback ask #8) | **Offline history backfill**: rows logged to SD while away are imported into long-term statistics on reconnect (see `../HISTORICAL_DATA_SYNC.md`). Any product with the data logger gets this for free. |
 
-The probe runs at setup, when the device's address changes, and when the
-reported firmware version changes — so a device OTA-updated to V6 grows its
-control entities automatically.
+The probe runs at setup, when the device's address or VPN state changes,
+when the reported firmware version changes, after a failed button command,
+and — rate-limited to every 5 minutes — on any push while the probe has
+never succeeded (device was asleep at setup). A device OTA-updated to V6
+grows its control entities automatically.
 
 **Device-side requirement:** these routes must be reachable over plain HTTP
 on the address the device is known by (its mDNS hostname or pushed IP).
@@ -202,11 +218,17 @@ one.
 
 ### B3. Firmware updates (if the product publishes releases)
 
-`update.py` + `github_releases.py` currently match WiCAN asset names by
-hardware keywords. For a new product: point the coordinator at
-`profile.firmware_repo` and add an asset matcher for the product's naming
-pattern (keep patterns disjoint across products — this is what makes
-cross-flashing impossible). Extend
+`github_releases.py` classifies WiCAN releases into PRO / USB / OBD
+streams by version-tag suffix (`p`/`u`), with OBD/USB eligibility decided
+by which `.bin` assets a release actually carries; one shared hourly
+GitHub fetch serves all entries, and a late-learned `hw_version`
+retargets the stream without a reload. For a new product: note that
+`profile.firmware_repo` / `firmware_asset_pattern` exist on the profile
+but are **not consumed yet** — the coordinator is hardcoded to
+`meatpiHQ/wican-fw`. Wiring those fields up is the first task for the
+first non-WiCAN product with releases; add an asset matcher for the
+product's naming pattern (keep patterns disjoint across products — this
+is what makes cross-flashing impossible) and extend
 `tests/test_firmware_asset_selection.py` with the new patterns.
 
 ### B4. Discovery (usually nothing to do)
@@ -247,7 +269,7 @@ Run the gates before merging:
 ### B6. Docs
 
 - README "Supported devices" table + entity table.
-- This file and `MEATPI_INTEGRATION_PLAN.md` if the framework itself grew.
+- This file and `../MEATPI_INTEGRATION_PLAN.md` if the framework itself grew.
 - Release notes: call out new device support explicitly.
 
 ### Integration checklist

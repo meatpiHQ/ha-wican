@@ -40,7 +40,7 @@ The GPS location tracking feature has been successfully implemented for the WiCA
 3. **`custom_components/wican/translations/en.json`**
    - Added device_tracker entity translation
 
-4. **`DEVICE_ENDPOINTS.md`**
+4. **`device-contract/DEVICE_ENDPOINTS.md`**
    - Added GPS payload specification
    - Documented all GPS fields and ranges
 
@@ -225,7 +225,7 @@ ha-cli state get device_tracker.wican_device_location
 - [x] Add device_tracker to PLATFORMS
 - [x] Add GPS constants
 - [x] Add translation keys
-- [x] Update DEVICE_ENDPOINTS.md
+- [x] Update device-contract/DEVICE_ENDPOINTS.md
 - [x] Create comprehensive tests
 - [x] Write documentation (GPS_FEATURE.md)
 
@@ -306,7 +306,7 @@ The implementation follows the same pattern as proven HA integrations:
 ## 📚 Documentation
 
 - **GPS_FEATURE.md** - Complete feature documentation
-- **DEVICE_ENDPOINTS.md** - Webhook payload specification
+- **device-contract/DEVICE_ENDPOINTS.md** - Webhook payload specification
 - **tests/test_device_tracker.py** - Test examples and patterns
 
 ---

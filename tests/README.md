@@ -16,7 +16,7 @@ Key building blocks:
   `test_hardening.py` — the hardened-telemetry and failure-injection
   suites.
 
-Adding a new device type? Follow `notes/ADDING_A_DEVICE.md` (Part B.5
+Adding a new device type? Follow `notes/device-contract/ADDING_A_DEVICE.md` (Part B.5
 lists the required test coverage).
 
 ## Prerequisites

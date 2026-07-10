@@ -38,7 +38,7 @@
         "no_url_available": "Home Assistant has no HTTP address the device could push to. Set the internal URL under Settings > System > Network, then retry setup."
       },
       "create_entry": {
-        "default": "To send events to Home Assistant, you will need to set up a webhook.\n\nOpen WiCAN and go to *Settings → Services → Automation → Webhooks*\n\nEnable *Webhooks* and fill in the following webhook in the URL field:\n\n`{webhook_url}`\n\nSee [the documentation]({docs_url}) for further details."
+        "default": "To send events to Home Assistant, you will need to set up a webhook.\n\nOpen the device's web interface and go to *Settings → Services → Automation → Webhooks*\n\nEnable *Webhooks* and fill in the following webhook in the URL field:\n\n`{webhook_url}`\n\nHome Assistant also registers this automatically when it can reach the device. See [the documentation]({docs_url}) for further details."
       },
       "error": {
         "device_mismatch": "Device ID mismatch. Expected {expected}, got {actual}. The device may have been replaced or the configuration is pointing to a different device. Please delete and reconfigure this integration.",

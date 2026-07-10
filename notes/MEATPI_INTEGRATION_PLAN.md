@@ -17,7 +17,7 @@ Turn the WiCAN-specific integration into a **MeatPi brand integration**:
   (pre-V6, webhook-only) must keep working unchanged after the
   integration update.
 - **Firmware V6 ready**: WiCAN V6 ships a full HTTP API
-  (`notes/HTTP_API.md`). The integration gains a V6 API client and uses
+  (`notes/device-contract/HTTP_API.md`). The integration gains a V6 API client and uses
   it for capability discovery and device *control* (buttons/actions),
   while telemetry stays push-based (webhooks) on every firmware.
 - **Quality scale stays at the platinum bar**: strict typing, full test
@@ -61,7 +61,7 @@ sections of the push payload it is expected to produce. A registry maps
 `device_type` (backfilled by config-entry migration, inferred from the
 stored `hw_version`). Adding a product = adding a profile (plus entity
 descriptions if it has product-specific entities). See
-`notes/ADDING_A_DEVICE.md` for the full recipe.
+`notes/device-contract/ADDING_A_DEVICE.md` for the full recipe.
 
 Declared today: `wican` (OBD), `wican_usb`, `wican_pro`, `espnetlink`
 (profile present; hardware not yet released), and `meatpi` (generic
@@ -109,7 +109,7 @@ switches/numbers/selects (LED alert, logger gate, DTC scan, …).
 
 Everything above works against the **current** V6 API. The gaps that
 would make the integration cleaner/fully generic are collected in
-`notes/FIRMWARE_API_FEEDBACK.md` (device identity in `/api/status`, a
+`notes/device-contract/FIRMWARE_API_FEEDBACK.md` (device identity in `/api/status`, a
 shared `_meatpi._tcp` mDNS service, a payload schema version, a generic
 action-invocation endpoint, V6 OTA route). None of them block this
 release.
@@ -211,13 +211,13 @@ fails setup.
   findings fixed along the way)
 
 ### Phase 6 — Documentation
-- `notes/ADDING_A_DEVICE.md` — the full "add a new MeatPi device" guide
+- `notes/device-contract/ADDING_A_DEVICE.md` — the full "add a new MeatPi device" guide
   (integration-side steps + what the firmware must implement).
-- `notes/FIRMWARE_API_FEEDBACK.md` — requested WiCAN/ESPNetlink
+- `notes/device-contract/FIRMWARE_API_FEEDBACK.md` — requested WiCAN/ESPNetlink
   firmware API changes.
 - README (MeatPi brand, device table, button platform, developer links),
   `quality_scale.yaml` (both), `hacs.json`, `pyproject.toml`,
-  `notes/HTTP_API.md` + `notes/DEVICE_COMPATIBILITY_GUIDE.md`
+  `notes/device-contract/HTTP_API.md` + `notes/device-contract/DEVICE_COMPATIBILITY_GUIDE.md`
   cross-references refreshed.
 
 **Executed:** as described.
@@ -307,7 +307,7 @@ hourly; raw states/logbook stay empty for the offline period; GPS
 location history cannot be backfilled.
 
 ### Phase 9 — Remote device catalog (new products without integration releases)
-(added 2026-07-10, same day, on request; spec: `DEVICE_CATALOG.md`)
+(added 2026-07-10, same day, on request; spec: `device-contract/DEVICE_CATALOG.md`)
 
 - **`catalog.py`**: fetch/validate/apply/persist manager for a JSON
   catalog of device-type definitions published on GitHub (placeholder

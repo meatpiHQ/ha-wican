@@ -84,7 +84,7 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         elapsed = (dt_util.utcnow() - self._last_push).total_seconds()
         if elapsed > threshold:
             raise UpdateFailed(
-                f"No data received from WiCAN device in {elapsed:.0f}s "
+                f"No data received from the device in {elapsed:.0f}s "
                 f"(threshold {threshold}s)",
             )
 
@@ -145,7 +145,7 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # so a misbehaving device cannot break state updates for others.
         if not isinstance(data, dict):
             _LOGGER.warning(
-                "Ignoring non-object WiCAN webhook data (%s)", type(data).__name__,
+                "Ignoring non-object device webhook data (%s)", type(data).__name__,
             )
             return False
 

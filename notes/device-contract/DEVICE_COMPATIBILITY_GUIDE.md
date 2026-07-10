@@ -61,14 +61,16 @@ for the firmware `update` entity.
 ## 2. Requirement 1 — mDNS / Zeroconf discovery
 
 The integration auto-discovers devices via Zeroconf. Manifest subscribes to:
+- `_meatpi._tcp.local.` (any MeatPi product)
 - `_wican._tcp.local.`
-- `_http._tcp.local.`
+- `_http._tcp.local.` (legacy fallback)
 
 (Source: `manifest.json` → `zeroconf`.)
 
-A discovered service is **accepted as a WiCAN** if **either** is true
+A discovered service is **accepted as a MeatPi device** if **any** is true
 (`config_flow.py::async_step_zeroconf`):
-- the service **instance name** is exactly `WiCAN-WebServer`, **or**
+- the service **type** starts with `_meatpi.` or `_wican.` (name-independent), **or**
+- (legacy `_http._tcp` only) the **instance name** is exactly `WiCAN-WebServer`, **or**
 - the **hostname** (lowercased) **starts with** `wican_` (e.g. `wican_a1b2c3.local`).
 
 ### TXT records (mDNS properties)
@@ -78,13 +80,22 @@ Provide these TXT key/values so HA gets a stable unique ID and device metadata:
 |---|---|---|
 | `mac` | Device MAC, e.g. `AA:BB:CC:DD:EE:FF` | **Preferred** unique ID (colons stripped, lowercased) and a device connection record. |
 | `device_id` | Stable device serial/ID string | Fallback unique ID and serial number; also used for identity validation (see §6). |
+| `device_type` | Built-in or catalog device-type slug | Selects the device profile (newer firmware). Unknown slugs on `_meatpi._tcp` map to the generic profile; legacy advertisements omit it and setup infers the type from `hw_version`. |
 
 Unique-ID resolution order (`config_flow.py`): `mac` → `device_id` →
 `"{hostname}-{host}:{port}"` (legacy fallback). **Always send `mac` (and ideally
 `device_id`)** so a device is recognized across IP/hostname changes and so
 re-discovery updates the stored address instead of creating a duplicate.
 
-The device should also serve an HTTP UI at its address; HA uses the mDNS/host URL
+Duplicate protection goes beyond the unique ID: both flows also match
+existing entries **by connection address** (hostname/IP, normalized). A
+device added manually by address is *adopted* by a later MAC-bearing
+discovery (the entry is upgraded to the MAC unique ID); manually re-adding
+a discovered device aborts as already configured. Related flow aborts:
+`no_url_available` (HA has no HTTP URL a device could push to), `no_host`,
+`not_wican`.
+
+The device should also serve an HTTP UI at its address; HA uses the mDNS URL
 as the device's `configuration_url` (the "Visit" link).
 
 ---
@@ -131,10 +142,12 @@ one is unreachable. Non-Pro firmware can ignore `urls` and use `url`.
 ### Response the device must return
 - **Success:** any HTTP status **< 300** (e.g. `200` or `204`). HA treats `< 300`
   as registered and stops retrying.
-- **Failure:** any status ≥ 300, or a connection error. HA retries up to 3 times
-  with exponential backoff (1s, 2s, 4s), trying cached-IP → host → mDNS
+- **Failure:** any status ≥ 300, or a connection error. HA makes up to 3
+  attempts (1 s then 2 s backoff between them), trying cached-IP → host →
+  mDNS → **device VPN address** (when the device has pushed `vpn_ip`)
   endpoints. After all retries fail, HA raises a **repair issue** telling the
-  user the device is unreachable.
+  user the device is unreachable; it clears automatically on the next
+  success.
 
 The device must **persist** the `url`/`enabled`/`interval` and start pushing.
 
@@ -152,11 +165,17 @@ Content-Type: application/json
 { "status": { ... }, "autopid_data": { ... }, "config": { ... }, "gps": { ... } }
 ```
 
+The body may be gzip-compressed (`Content-Encoding: gzip`); HA inflates it
+with a 2 MiB decompressed-size cap.
+
 HA's webhook handler (`__init__.py::handle_webhook`) responds:
 - `204 No Content` — accepted.
 - `403 Forbidden` — device identity mismatch (see §6). The device is being
   rejected; do not keep sending under a different identity.
-- `422 Unprocessable Entity` — body was not valid JSON.
+- `413 Payload Too Large` — body over the 2 MiB decompressed cap.
+- `422 Unprocessable Entity` — body was not valid JSON / not a JSON object.
+- `503 Service Unavailable` — the push raced an integration reload;
+  **retry on the next cycle**.
 
 All four top-level keys are **optional per push** — send whichever data you have.
 A push with only `status` is fine; a push with only `autopid_data`+`config` is
@@ -193,11 +212,20 @@ page and in diagnostics):
 | `wifi_mode` | WiFi Mode | sensor (diag) | e.g. `Station`. Extra attrs: `ap_ch`, `ap_auto_disable`, `sta_status`, `mdns`. |
 | `vpn_status` | VPN Status | sensor (diag) | Extra attr: `vpn_ip`. |
 | `uptime` | Uptime | sensor (diag) | e.g. `"01:00:00"`. |
-| `ecu_status` | ECU Online | binary_sensor | True when value ∈ {`enable`,`true`,`online`} (case-insensitive). Extra attr: `obd_chip_status`. |
+| `ecu_status` | ECU Online | binary_sensor | Only created on OBD-capable device types (`requires_obd`). True when value ∈ {`enable`,`true`,`online`} (case-insensitive). Extra attr: `obd_chip_status`. |
 | `ble_status` | Bluetooth Enabled | binary_sensor (diag) | Same truthiness rule. Extra attr: `ble_power`. |
 
 "Extra attrs" are optional keys in `status` that get attached to the entity's
 state attributes when present.
+
+Two behaviors around these entities:
+- A **"Last seen"** diagnostic timestamp sensor tracks the device's latest
+  push. When the device goes silent past the staleness window every entity
+  becomes unavailable **except** Last seen, which keeps dating the stale
+  readings (it also survives HA restarts).
+- Sending `vpn_ip` (private/CGNAT address) plus `vpn_status` makes HA record
+  that address as the backup endpoint for webhook registration and control
+  commands — recommended for vehicles reachable over WireGuard/Tailscale.
 
 ### 5.2 `autopid_data` (object) — dynamic OBD-II PID sensors
 Map of **PID key → value**. Each key becomes a sensor entity, created
@@ -318,9 +346,18 @@ body:            raw firmware bytes
 - Multipart field name: `ota_file` (`OTA_FORM_FIELD`).
 - The device must accept the upload, flash, and reboot. Return a success (2xx)
   status; a non-2xx becomes a translated "firmware upload failed" error in HA.
-- HA picks the release asset by device type: assets whose name/tag contain `PRO`
-  or `…p` are treated as Pro builds and matched against `hw_version` containing
-  `pro`. Name your release assets accordingly so the right binary is selected.
+- Release selection happens in two layers:
+  1. **Stream**: releases are classified PRO / USB / OBD by the version-tag
+     suffix letter (`v4.45p` → PRO, `v4.13u` → USB, `v4.46` → OBD; release
+     name is the fallback). PRO devices only see PRO releases.
+  2. **Assets**: OBD and USB devices are only offered releases that actually
+     carry their `.bin` (`wican-fw_obd_vXXX.bin` / `wican-fw_usb_vXXXu.bin` /
+     `wican-fw_obd_pro_vXXXp.bin`) — a combined release like `v4.13` serves
+     both; an OBD-only release is never offered to a USB device.
+  Name tags and assets accordingly so the right binary is selected.
+- The GitHub release list is fetched once per hour, shared across all
+  configured devices. `update.install` accepts user version input in any of
+  the natural forms (`4.44`, `v4.44`, `4.44p`, `V4.44P`).
 - Upload timeout is generous (180 s); download-from-GitHub is separate.
 
 The GitHub source is `meatpiHQ/wican-fw` releases (`const.py`).

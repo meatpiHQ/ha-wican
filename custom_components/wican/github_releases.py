@@ -126,7 +126,7 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         super().__init__(
             hass,
             _LOGGER,
-            name="WiCAN GitHub Releases",
+            name="MeatPi firmware releases",
             update_interval=UPDATE_INTERVAL,
         )
         self._stream = stream

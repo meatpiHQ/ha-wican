@@ -142,7 +142,7 @@ rules:
     status: done
     comment: >
       README lists WiCAN OBD-II / Pro / USB plus upcoming ESPNetlink and the
-      generic MeatPi device contract (notes/ADDING_A_DEVICE.md).
+      generic MeatPi device contract (notes/device-contract/ADDING_A_DEVICE.md).
   docs-supported-functions:
     status: done
     comment: README "Supported functionality" lists entities per platform.

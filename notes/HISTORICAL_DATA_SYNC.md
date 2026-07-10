@@ -70,7 +70,7 @@ measurements; replaces `has_mean`) — mandatory from 2026.11.
 The V6 firmware already provides almost everything:
 
 - `data_logger` writes the params stream to `/sd/logs/dl_<epoch>.*`
-  (sqlite/csv/jsonl) with rotation and retention (`HTTP_API.md` §6e6);
+  (sqlite/csv/jsonl) with rotation and retention (`device-contract/HTTP_API.md` §6e6);
 - `rtc_manager` + SNTP + the `time_synced` status bit give trustworthy
   UTC timestamps — non-negotiable for backfill;
 - `/api/fs/list` + `/api/fs/download` can fetch rotated files (the
@@ -155,7 +155,7 @@ Full-resolution options that still surface in the HA UI (not recorder):
 
 One addition makes this dramatically cleaner than file-scraping — a
 cursor-based export route on `data_logger` (recorded as ask #8 in
-`FIRMWARE_API_FEEDBACK.md`):
+`device-contract/FIRMWARE_API_FEEDBACK.md`):
 
 ```
 GET /api/logger/export?stream=params&since=<epoch>&limit=<n>

@@ -28,7 +28,9 @@ integration release.
 2. A background refresh fetches the published document at most **once
    per 24 h** (256 KiB cap, 15 s timeout). A valid fetch applies
    immediately and is persisted; anything else (offline, HTTP error,
-   garbage, wrong schema) keeps the current catalog.
+   garbage, wrong schema) keeps the current catalog. The "Refresh
+   integration definitions" button forces an immediate fetch, bypassing
+   the 24 h schedule.
 3. Catalog profiles **override same-named built-ins** (the catalog is the
    living source; built-ins are the offline fallback) — except the
    **reserved slugs** `wican`, `wican_usb`, `wican_pro`, `meatpi`, whose

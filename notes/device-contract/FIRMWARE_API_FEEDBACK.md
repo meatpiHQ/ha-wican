@@ -18,7 +18,7 @@
 | 5 | Keep `/api/webhook` (ha_webhooks) contract identical on every product; document it in `ha_webhooks/HTTP_API.md` as the cross-product contract | XS | It is the one mandatory surface (see ADDING_A_DEVICE.md Part A) |
 | 6 | OTA: keep accepting the legacy `/upload/ota.bin` on V6 WiCAN for ≥2 releases; new products only need `/api/ota/upload` | XS | HA updates devices mid-transition |
 | 7 | ESPNetlink standalone: same core surface + `/api/gps` + `gps` in the push + LTE fields in `status` | M | GPS/LTE products need a defined telemetry shape |
-| 8 | `GET /api/logger/export?stream=params&since=<epoch>&limit=<n>` — cursor-based JSONL export of the data_logger params stream | M | Offline-drive history backfill into HA long-term statistics (see `HISTORICAL_DATA_SYNC.md`) |
+| 8 | `GET /api/logger/export?stream=params&since=<epoch>&limit=<n>` — cursor-based JSONL export of the data_logger params stream | M | Offline-drive history backfill into HA long-term statistics (see `../HISTORICAL_DATA_SYNC.md`) |
 | 9 | LTE data-saver posting profile: per-uplink interval, on-change deadband pushes, config-section suppression, gzip bodies, keep-alive | M | IoT-SIM users: cut cellular data from ~0.5–1.5 MB per driving hour to tens of KB |
 
 ## Details
@@ -83,9 +83,10 @@ implicit contract. Add one field at the top level:
 { "schema": 1, "status": { ... }, ... }
 ```
 
-Bump only on breaking shape changes. The integration treats a missing
-`schema` as 1 (all current firmware). Cheap now, priceless the first time
-the shape has to change.
+Bump only on breaking shape changes. The integration does not read a
+`schema` key today (it would be ignored like any unknown top-level key);
+the proposal is that it treat a missing `schema` as 1 once shapes need to
+diverge. Cheap now, priceless the first time the shape has to change.
 
 ### 4. Generic action invocation endpoint
 
@@ -129,13 +130,14 @@ mandatory MeatPi↔HA contract (Level 1 in `ADDING_A_DEVICE.md`). Request:
 
 ### 6. OTA route transition
 
-The integration currently uploads to legacy `/upload/ota.bin`
-(`ota_file` form field). V6 moved to `/api/ota/upload`. Request: V6 WiCAN
-keeps answering the legacy route for at least two releases (integration
-now knows both; users may update firmware and integration in either
-order). New products need only the V6 route. Also: keep per-product
-firmware asset names disjoint (`wican-fw_obd_*`, `espnetlink-fw_*`) so
-the update entity can never cross-flash.
+The integration uploads ONLY to the legacy `/upload/ota.bin`
+(`ota_file` form field) today — it does not call `/api/ota/upload` yet.
+Request: V6 WiCAN keeps answering the legacy route until the integration
+ships support for the V6 route (then for ≥2 releases so users may update
+firmware and integration in either order). A V6-only product without the
+legacy route currently gets no working update entity. Also: keep
+per-product firmware asset names disjoint (`wican-fw_obd_*`,
+`espnetlink-fw_*`) so the update entity can never cross-flash.
 
 ### 7. ESPNetlink (standalone mode) telemetry shape
 
@@ -158,7 +160,7 @@ the WiCAN.
 
 ### 8. Data-logger export route (history backfill)
 
-Full analysis in `HISTORICAL_DATA_SYNC.md`. A device that drove offline
+Full analysis in `../HISTORICAL_DATA_SYNC.md`. A device that drove offline
 already logs timestamped AutoPID rows to SD (`data_logger` params
 stream); Home Assistant can legally backfill those into each sensor's
 **long-term statistics** at the recorded times via the official recorder

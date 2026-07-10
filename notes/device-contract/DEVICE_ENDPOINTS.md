@@ -1,6 +1,8 @@
-# WiCAN Device Endpoint Implementation Guide
+# MeatPi Device Endpoint Implementation Guide
 
-- Overview: Implement simple REST endpoints on the WiCAN device so Home Assistant (HA) can auto-register a webhook and receive status updates.
+- Overview: Implement simple REST endpoints on the device so Home Assistant
+  (HA) can auto-register a webhook and receive status updates. Applies to
+  WiCAN and every future MeatPi product.
 
 ## Endpoints
 
@@ -35,6 +37,11 @@
       ```
     - `200 OK` on update
     - `400 Bad Request` if invalid URL (non-http/https)
+  - How HA calls it: the integration tries endpoint candidates in order —
+    cached device IP → configured host → mDNS hostname → the device's
+    VPN address (if the device pushed one, see below) — with 3 attempts
+    and 1 s / 2 s backoff between them. Failures raise a repair issue in
+    HA that clears automatically on the next success.
 
 - GET `/api/webhook`
   - Purpose: Inspect current webhook configuration.
@@ -47,23 +54,12 @@
   - Purpose: Disable and clear webhook target.
   - Response: `204 No Content`
 
-
-- GET `/api/pids` (optional)
-  - Purpose: Provide AutoPID summary for HA dynamic sensors.
-  - Response:
-    ```json
-    {
-      "config": { "RPM": { "class": "speed", "unit": "rpm" } },
-      "keys": ["RPM"]
-    }
-    ```
-
 ## Behavior
 
 - Idempotent: Multiple `POST /api/webhook` with same URL returns `200 OK`.
 - WiCAN-PRO `v4.49+`: If `urls` is present, store all URLs and attempt delivery in order until one succeeds.
 - Home Assistant integration behavior:
-  - WiCAN non-Pro uses a single local HTTP webhook URL.
+  - Non-Pro devices use a single local HTTP webhook URL.
   - WiCAN-PRO `v4.49+` prefers local HTTP first and appends an external HTTPS
     URL from Nabu Casa or a reverse proxy when available.
   - If local HTTP is unavailable, WiCAN-PRO `v4.49+` may fall back to a single
@@ -74,7 +70,7 @@
   - Request:
     ```json
     {
-      "status": { /* same keys as GET /api/status */ },
+      "status": { /* same keys as GET /api/status; include device_id */ },
       "autopid_data": { /* PID values */ },
       "config": { /* PID config */ },
       "gps": {
@@ -87,6 +83,13 @@
       }
     }
     ```
+  - The body may be sent `Content-Encoding: gzip` (useful over LTE). HA
+    inflates it with a 2 MiB decompressed-size cap; a healthy payload is a
+    few KiB.
+  - Devices reachable over a VPN tunnel (WireGuard/Tailscale) should
+    include `vpn_ip` and `vpn_status` in `status`: HA records the address
+    (private/CGNAT ranges only) and uses it as the backup endpoint for
+    webhook registration and control commands when the car is away.
   - GPS fields (all optional):
     - `latitude` (float, -90 to 90): Latitude in decimal degrees
     - `longitude` (float, -180 to 180): Longitude in decimal degrees
@@ -96,10 +99,28 @@
     - `heading` (float): Heading/bearing in degrees (0-360)
   - Update metrics: `last_post`, `status` ("ok" or error), `retries`.
 
-## Security (optional)
+### Responses from Home Assistant (push contract)
 
-- Shared secret: Support `Authorization: Bearer <token>` when posting to HA, or include `?token=...` in URL.
-- HTTPS: Prefer HTTPS if feasible.
+| Status | Meaning | Device action |
+|---|---|---|
+| `204 No Content` | Delivered and processed | none |
+| `403 Forbidden` | `device_id` does not match the configured device | stop; needs user attention (device replaced?) |
+| `413 Payload Too Large` | Body over 2 MiB decompressed | shrink the payload |
+| `422 Unprocessable Entity` | Body not valid JSON / not a JSON object | fix the payload |
+| `503 Service Unavailable` | Integration reloading at that instant | **retry** (next cycle is fine) |
+
+Track `last_post`/`retries` and back off on repeated failures; a `503`
+is transient and expected during HA restarts/reloads.
+
+## Security
+
+- The webhook id embedded in the URL path is the shared secret; treat the
+  full URL as sensitive.
+- The integration does not send an `Authorization` header or `?token=`
+  parameter — do not require one on `/api/webhook`.
+- HA derives the device's IP from the connection peer address (proxy
+  headers are honored only for proxies the HA user explicitly trusts), so
+  push from the device's own address where possible.
 
 ## ESP-IDF Implementation Sketch
 
@@ -131,10 +152,19 @@
 
 ## mDNS
 
-- Service: `_http._tcp.local`
-- Instance: `WiCAN-WebServer`
-- Hostname: `wican_<id>.local`
-- TXT: `firmware=<fw>`, `hardware=<hw>`, `path=/`
+- Preferred service: `_meatpi._tcp.local` (any MeatPi product) or
+  `_wican._tcp.local` (WiCAN family). Any service of these types is
+  accepted by the integration regardless of instance name.
+- Legacy fallback: `_http._tcp.local` with instance `WiCAN-WebServer` or a
+  hostname starting with `wican_`.
+- Hostname: `wican_<id>.local` (or product-appropriate).
+- TXT records the integration reads:
+  - `mac=<aa:bb:cc:dd:ee:ff>` — preferred stable unique id
+  - `device_id=<id>` — fallback unique id
+  - `device_type=<slug>` — built-in or catalog device-type slug (newer
+    firmware); unknown slugs on `_meatpi._tcp` map to the generic profile
+- Note: an entry added manually by address is automatically adopted (not
+  duplicated) when the same device is later discovered with a MAC.
 
 ## Quick Test
 
@@ -154,3 +184,5 @@
 
 - HA already attempts `POST /api/webhook`; once implemented, it should succeed.
 - HA expects numeric values for voltage; device can send numeric (e.g., `11.3`) with unit `V` separately, or continue sending `"11.3V"` which HA normalizes on receipt.
+- PID configuration reaches HA solely through the pushed `config` section;
+  the integration does not call a `GET /api/pids` route.
