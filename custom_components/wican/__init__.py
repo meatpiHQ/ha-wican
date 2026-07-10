@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from http import HTTPStatus
+import ipaddress
 import logging
 import re
 import time
@@ -20,10 +21,11 @@ from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.util.json import json_loads
 import voluptuous as vol
 from yarl import URL
 
-from .api import MeatPiApiClient
+from .api import DeviceCapabilities, MeatPiApiClient
 from .catalog import async_setup_catalog
 from .const import (
     COMPONENT_DATA_LOGGER,
@@ -36,6 +38,7 @@ from .const import (
     HISTORY_SYNC_MIN_INTERVAL,
     IP_CACHE_DURATION,
     MAX_DEVICE_INFO_FIELD_LENGTH,
+    MAX_WEBHOOK_BODY_BYTES,
     PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
     PROBE_RETRY_INTERVAL,
     SIGNAL_CAPABILITIES_UPDATED,
@@ -71,6 +74,40 @@ WiCANConfigEntry = ConfigEntry[WiCANRuntimeData]
 
 class _WebhookEndpointsFailedError(WiCANWebhookError):
     """Raised when all webhook endpoints failed for this attempt."""
+
+
+class _WebhookBodyTooLargeError(WiCANWebhookError):
+    """Raised when a webhook body exceeds the decompressed size cap."""
+
+
+async def _async_read_webhook_json(request: Request) -> Any:
+    """Read a webhook body (plain or gzip) as JSON, bounded.
+
+    Pushes may arrive gzip-compressed (LTE data saving); aiohttp inflates
+    them transparently while only limiting the *compressed* size, so this
+    accumulates at most MAX_WEBHOOK_BODY_BYTES of decompressed body —
+    backpressure keeps anything past the cap un-inflated. aiohttp's payload
+    layer additionally aborts suspicious streams on its own
+    (RequestPayloadError), which callers treat like any undecodable body.
+
+    Raises _WebhookBodyTooLargeError past the cap; whatever json/aiohttp
+    raise for undecodable bodies otherwise.
+    """
+    chunks: list[bytes] = []
+    body_length = 0
+    while body_length <= MAX_WEBHOOK_BODY_BYTES:
+        chunk = await request.content.read(
+            MAX_WEBHOOK_BODY_BYTES + 1 - body_length,
+        )
+        if not chunk:
+            break
+        chunks.append(chunk)
+        body_length += len(chunk)
+    if body_length > MAX_WEBHOOK_BODY_BYTES:
+        raise _WebhookBodyTooLargeError
+    # HA's strict loader (orjson) rejects NaN/Infinity — the state machine
+    # cannot represent them, so they must never enter the pipeline.
+    return json_loads(b"".join(chunks))
 
 
 def _parse_version(version: str | None) -> tuple[int, ...] | None:
@@ -270,6 +307,83 @@ def _collect_device_reported_fields(data: dict[str, Any]) -> dict[str, str]:
             continue
         fields[key] = field_value
     return fields
+
+
+# Tailscale hands out addresses from the CGNAT range.
+_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _validated_vpn_ip(value: object) -> str | None:
+    """Return a safe device VPN tunnel address, or None.
+
+    The pushed vpn_ip tells the integration where to send control traffic,
+    so it must never be able to point at an arbitrary internet host: only
+    private (RFC1918/ULA) and CGNAT (Tailscale 100.64/10) addresses are
+    accepted.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+    if address.is_loopback or address.is_multicast or address.is_link_local:
+        return None
+    if address.is_private or (
+        address.version == 4 and address in _CGNAT_NETWORK
+    ):
+        return str(address)
+    return None
+
+
+# vpn_status values that positively indicate the tunnel is down; anything
+# else (unknown wording, missing field) trusts the presence of a valid ip.
+_VPN_DOWN_MARKERS = ("not", "disabled", "disconnected", "off", "down")
+
+
+def _update_vpn_state(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    data: dict[str, Any],
+) -> None:
+    """Track the device-reported VPN tunnel address from a push payload.
+
+    A connected VPN's address becomes the backup control endpoint (tried
+    after the local address); a disconnected VPN clears it so control never
+    targets a stale tunnel. Changes re-run the capability probe so the
+    working endpoint rebinds.
+    """
+    status = data.get("status")
+    if not isinstance(status, dict):
+        return
+    if "vpn_ip" not in status and "vpn_status" not in status:
+        return  # firmware without VPN reporting: leave state untouched
+
+    vpn_ip = _validated_vpn_ip(status.get("vpn_ip"))
+    vpn_status = status.get("vpn_status")
+    if isinstance(vpn_status, str) and any(
+        marker in vpn_status.lower() for marker in _VPN_DOWN_MARKERS
+    ):
+        vpn_ip = None
+
+    runtime = entry.runtime_data
+    if vpn_ip == runtime.device_vpn_ip:
+        return
+
+    runtime.device_vpn_ip = vpn_ip
+    new_data = dict(entry.data)
+    if vpn_ip is None:
+        new_data.pop("vpn_ip", None)
+        _LOGGER.debug("Device VPN disconnected; clearing backup endpoint")
+    else:
+        new_data["vpn_ip"] = vpn_ip
+        _LOGGER.info(
+            "Device VPN address %s recorded as backup control endpoint", vpn_ip,
+        )
+    if new_data != dict(entry.data):
+        hass.config_entries.async_update_entry(entry, data=new_data)
+
+    hass.async_create_task(_async_request_capability_probe(hass, entry))
 
 
 def _merge_device_fields(
@@ -501,6 +615,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         post_interval=post_interval,
         device_host=entry.data.get("host"),
         device_ip=entry.data.get("ip"),
+        device_vpn_ip=_validated_vpn_ip(entry.data.get("vpn_ip")),
         device_profile=device_profile,
     )
 
@@ -524,15 +639,32 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         """Handle incoming WiCAN webhook request."""
         _LOGGER.info("Received WiCAN webhook: %s", webhook_id)
         try:
-            data = await request.json()
+            data = await _async_read_webhook_json(request)
             _LOGGER.debug("Webhook payload: %s", data)
         except vol.MultipleInvalid as error:
             return Response(
                 text=error.error_message, status=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
-        except (ValueError, UnicodeDecodeError):
-            # Body was not valid JSON (json.JSONDecodeError is a ValueError).
-            _LOGGER.warning("Received WiCAN webhook with an invalid JSON body")
+        except _WebhookBodyTooLargeError:
+            _LOGGER.warning(
+                "Rejecting oversized WiCAN webhook body (> %d bytes)",
+                MAX_WEBHOOK_BODY_BYTES,
+            )
+            return Response(
+                text="Payload too large",
+                status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            )
+        except Exception as err:
+            # Not valid JSON (json.JSONDecodeError is a ValueError), a broken
+            # gzip stream (aiohttp raises its content-encoding errors on
+            # read), or transport garbage. One clean 422 for all of it; a
+            # broken device must never wedge the webhook.
+            _LOGGER.warning(
+                "Received WiCAN webhook with an invalid or undecodable body "
+                "(%s: %s)",
+                type(err).__name__,
+                err,
+            )
             return Response(
                 text="Invalid JSON body",
                 status=HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -566,6 +698,10 @@ async def async_setup_entry(  # noqa: C901, PLR0915
 
         # Persist any device-reported info (fw/hw versions, connection data).
         _persist_device_reported_info(hass, entry, data, request)
+
+        # Track the device's VPN tunnel address (backup control endpoint
+        # for cars on the road via WireGuard/Tailscale).
+        _update_vpn_state(hass, entry, data)
 
         # A device that pushes is clearly awake. If the capability probe has
         # never reached it (device was asleep/unreachable at setup), retry
@@ -681,19 +817,33 @@ def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry)
     entry.async_on_unload(_cancel_startup_registration)
 
 
-def _device_api_base_url(entry: WiCANConfigEntry) -> str | None:
-    """Return the best base URL for talking to the device HTTP API."""
+def _device_api_base_urls(entry: WiCANConfigEntry) -> list[str]:
+    """Return control-API base URL candidates, most-local first.
+
+    Local addresses are tried first; the device-reported VPN tunnel address
+    is the backup for cars on the road (WireGuard/Tailscale); the last
+    push-source IP is the final fallback.
+    """
     runtime = entry.runtime_data
-    for candidate in (
-        runtime.device_host,
-        entry.data.get("host"),
-        entry.data.get("mdns"),
-    ):
-        if candidate:
-            return str(candidate)
-    if runtime.device_ip:
-        return _http_url_from_host(runtime.device_ip)
-    return None
+    candidates = [
+        str(candidate)
+        for candidate in (
+            runtime.device_host,
+            entry.data.get("host"),
+            entry.data.get("mdns"),
+            _http_url_from_host(runtime.device_vpn_ip),
+            _http_url_from_host(runtime.device_ip),
+        )
+        if candidate
+    ]
+    # Deduplicate, keeping order.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            unique.append(candidate)
+    return unique
 
 
 async def _async_request_capability_probe(
@@ -721,6 +871,41 @@ async def _async_request_capability_probe(
         runtime.probe_running = False
 
 
+async def _async_probe_candidates(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    base_urls: list[str],
+) -> tuple[MeatPiApiClient, DeviceCapabilities | None]:
+    """Probe candidates in order; return (winning client, capabilities).
+
+    Capabilities is None when no candidate answered; the returned client is
+    then bound to the first (most local) candidate so later commands fail
+    with a clear connection error.
+    """
+    session = async_get_clientsession(hass)
+    api = MeatPiApiClient(session, base_urls[0])
+    for base_url in base_urls:
+        candidate_api = MeatPiApiClient(session, base_url)
+        try:
+            candidate_result = await candidate_api.async_probe()
+        except Exception as err:
+            # One broken candidate (odd resolver/transport error) must
+            # never keep the remaining candidates from being tried.
+            _LOGGER.debug(
+                "Probe candidate %s failed unexpectedly: %s", base_url, err,
+            )
+            continue
+        if candidate_result is not None:
+            if base_url != base_urls[0]:
+                _LOGGER.info(
+                    "Device %s reachable via backup endpoint %s",
+                    entry.title,
+                    base_url,
+                )
+            return candidate_api, candidate_result
+    return api, None
+
+
 async def _async_probe_capabilities(
     hass: HomeAssistant,
     entry: WiCANConfigEntry,
@@ -733,17 +918,19 @@ async def _async_probe_capabilities(
     runtime = getattr(entry, "runtime_data", None)
     if runtime is None:
         return
-    base_url = _device_api_base_url(entry)
-    if not base_url:
+    base_urls = _device_api_base_urls(entry)
+    if not base_urls:
         _LOGGER.debug(
             "Entry %s has no device address; skipping capability probe",
             entry.entry_id,
         )
         return
 
-    api = MeatPiApiClient(async_get_clientsession(hass), base_url)
+    # Try candidates most-local first; the VPN tunnel address is the backup
+    # for cars on the road. The first reachable candidate wins and becomes
+    # the bound control endpoint.
     try:
-        capabilities = await api.async_probe()
+        api, capabilities = await _async_probe_candidates(hass, entry, base_urls)
     except Exception:  # Defensive: a probe must never break anything else.
         _LOGGER.exception("Unexpected error probing device capabilities")
         return
@@ -756,8 +943,9 @@ async def _async_probe_capabilities(
     runtime.api = api
 
     if capabilities is None:
-        # Device unreachable (asleep, offline, mid-reboot): keep last-known
-        # capabilities and let telemetry pushes retry the probe later.
+        # Device unreachable on every candidate (asleep, offline,
+        # mid-reboot): keep last-known capabilities and let telemetry
+        # pushes retry the probe later.
         runtime.probe_successful = False
         return
     runtime.probe_successful = True
@@ -949,8 +1137,10 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
                 time.time() - entry.runtime_data.cache_timestamp,
             )
 
-    # Add host and mDNS as fallback
-    for candidate in (host, mdns):
+    # Add host and mDNS as fallback, then the device-reported VPN tunnel
+    # address (a car on the road via WireGuard/Tailscale).
+    vpn_url = _http_url_from_host(entry.runtime_data.device_vpn_ip)
+    for candidate in (host, mdns, vpn_url):
         endpoint = _build_webhook_endpoint(candidate)
         if endpoint:
             endpoints.append(endpoint)

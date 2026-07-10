@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from custom_components.wican import (
     _async_probe_capabilities,
     _async_request_capability_probe,
-    _device_api_base_url,
+    _device_api_base_urls,
 )
 from custom_components.wican.api import LEGACY_CAPABILITIES, DeviceCapabilities
 from custom_components.wican.button import async_setup_entry as button_setup
@@ -37,32 +37,41 @@ def _entry(**data: object) -> MagicMock:
     return entry
 
 
-def test_device_api_base_url_prefers_runtime_host() -> None:
-    """The live runtime host wins over stored entry data."""
+def test_device_api_base_urls_order() -> None:
+    """Candidates are ordered most-local first, VPN before source IP."""
     entry = _entry(host="http://stored.local", mdns="http://mdns.local")
     entry.runtime_data.device_host = "http://runtime.local"
-    assert _device_api_base_url(entry) == "http://runtime.local"
+    entry.runtime_data.device_vpn_ip = "100.98.7.6"
+    entry.runtime_data.device_ip = "192.168.1.50"
+
+    assert _device_api_base_urls(entry) == [
+        "http://runtime.local",
+        "http://stored.local",
+        "http://mdns.local",
+        "http://100.98.7.6",
+        "http://192.168.1.50",
+    ]
 
 
-def test_device_api_base_url_falls_back_to_entry_data() -> None:
-    """Stored host, then mdns, are used when no runtime host is known."""
-    entry = _entry(host="http://stored.local", mdns="http://mdns.local")
-    assert _device_api_base_url(entry) == "http://stored.local"
-
+def test_device_api_base_urls_fall_back_and_dedupe() -> None:
+    """Missing candidates are skipped; duplicates collapse in order."""
     entry = _entry(mdns="http://mdns.local")
-    assert _device_api_base_url(entry) == "http://mdns.local"
+    assert _device_api_base_urls(entry) == ["http://mdns.local"]
+
+    entry = _entry(host="http://same.local", mdns="http://same.local")
+    assert _device_api_base_urls(entry) == ["http://same.local"]
 
 
-def test_device_api_base_url_falls_back_to_ip() -> None:
+def test_device_api_base_urls_ip_last_resort() -> None:
     """A bare runtime IP is turned into an http URL as the last resort."""
     entry = _entry()
     entry.runtime_data.device_ip = "192.168.1.50"
-    assert _device_api_base_url(entry) == "http://192.168.1.50"
+    assert _device_api_base_urls(entry) == ["http://192.168.1.50"]
 
 
-def test_device_api_base_url_none_when_unknown() -> None:
-    """No address information at all yields None (probe is skipped)."""
-    assert _device_api_base_url(_entry()) is None
+def test_device_api_base_urls_empty_when_unknown() -> None:
+    """No address information at all yields no candidates (probe skipped)."""
+    assert _device_api_base_urls(_entry()) == []
 
 
 async def test_probe_request_without_runtime_data(hass: HomeAssistant) -> None:
@@ -98,8 +107,13 @@ async def test_probe_skipped_without_address(hass: HomeAssistant) -> None:
 
 
 async def test_probe_unexpected_error_contained(hass: HomeAssistant) -> None:
-    """An unexpected probe error is logged and changes nothing."""
+    """An unexpected candidate error degrades to the unreachable path.
+
+    Capabilities stay untouched, the probe is marked unsuccessful (so
+    pushes retry later), and a client stays bound for clear press errors.
+    """
     entry = _entry(host="http://stored.local")
+    entry.runtime_data.probe_successful = True
 
     with patch("custom_components.wican.MeatPiApiClient") as client_cls:
         client_cls.return_value = AsyncMock()
@@ -107,7 +121,8 @@ async def test_probe_unexpected_error_contained(hass: HomeAssistant) -> None:
         await _async_probe_capabilities(hass, entry)
 
     assert entry.runtime_data.capabilities == LEGACY_CAPABILITIES
-    assert entry.runtime_data.api is None
+    assert entry.runtime_data.api is not None
+    assert entry.runtime_data.probe_successful is False
 
 
 async def test_probe_result_dropped_after_unload(hass: HomeAssistant) -> None:

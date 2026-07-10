@@ -106,6 +106,13 @@ PARAMS_MAX_ENTRIES = 5000
 PARAMS_MAX_KEY_LENGTH = 128
 PARAMS_MAX_FIELD_LENGTH = 256
 
+# Webhook pushes may arrive gzip-compressed (LTE data saving). aiohttp
+# inflates transparently but only bounds the *compressed* size, so the
+# handler reads at most this many decompressed bytes — a compression bomb
+# stops inflating at the cap instead of ballooning memory. A healthy
+# payload is a few KiB.
+MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024
+
 # Device API levels (capability probe result)
 API_LEVEL_LEGACY = 0  # webhook-only firmware (pre-V6)
 API_LEVEL_V6 = 6  # full /api/* HTTP surface

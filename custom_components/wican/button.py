@@ -22,7 +22,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .catalog import async_refresh_device_catalog
 from .const import DOMAIN, SIGNAL_CAPABILITIES_UPDATED
 from .entity import WiCANEntity
-from .exceptions import MeatPiApiError
+from .exceptions import MeatPiApiConnectionError, MeatPiApiError
 from .param_loader import async_force_params_refresh
 
 if TYPE_CHECKING:
@@ -198,6 +198,20 @@ class WiCANButtonEntity(WiCANEntity, ButtonEntity):
             )
         try:
             await self.entity_description.press_fn(api)
+        except MeatPiApiConnectionError as err:
+            # The bound endpoint is unreachable (e.g. the car left home).
+            # Re-probe so the endpoint can rebind — typically to the
+            # device's VPN tunnel address — for the next press.
+            from . import _async_request_capability_probe  # noqa: PLC0415 — avoid import cycle at module load
+
+            self.hass.async_create_task(
+                _async_request_capability_probe(self.hass, self.config_entry),
+            )
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="api_command_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         except MeatPiApiError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

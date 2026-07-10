@@ -177,25 +177,33 @@ class SimulatedDeviceApi:
         self.logger_dir = "/sd/logs"
         self.log_files: dict[str, str] = {}
         self.active_log_file: str | None = None
+        # Hosts that no longer answer (e.g. the car left home: the LAN
+        # address dies while the VPN address keeps working).
+        self.unreachable_hosts: set[str] = set()
+        self._aioclient_mock = aioclient_mock
 
         for base in base_urls:
-            base_url = URL(base)
-            for method, path in (
-                ("get", "/api/status"),
-                ("get", "/api/settings"),
-                ("post", "/api/restart"),
-                ("post", "/api/rtc/sync"),
-                ("get", "/api/webhook"),
-                ("post", "/api/webhook"),
-                ("delete", "/api/webhook"),
-                ("get", "/api/logger"),
-                ("get", "/api/logger/export"),
-                ("get", "/api/fs/list"),
-                ("get", "/api/fs/download"),
-            ):
-                getattr(aioclient_mock, method)(
-                    str(base_url.with_path(path)), side_effect=self._respond,
-                )
+            self.add_base(base)
+
+    def add_base(self, base: str) -> None:
+        """Register the device API routes on an additional base URL."""
+        base_url = URL(base)
+        for method, path in (
+            ("get", "/api/status"),
+            ("get", "/api/settings"),
+            ("post", "/api/restart"),
+            ("post", "/api/rtc/sync"),
+            ("get", "/api/webhook"),
+            ("post", "/api/webhook"),
+            ("delete", "/api/webhook"),
+            ("get", "/api/logger"),
+            ("get", "/api/logger/export"),
+            ("get", "/api/fs/list"),
+            ("get", "/api/fs/download"),
+        ):
+            getattr(self._aioclient_mock, method)(
+                str(base_url.with_path(path)), side_effect=self._respond,
+            )
 
     # -- request counters --------------------------------------------------
 
@@ -219,6 +227,11 @@ class SimulatedDeviceApi:
     async def _respond(
         self, method: str, url: URL, data: Any,
     ) -> AiohttpClientMockResponse:
+        # Dead addresses never reach the device: not counted as calls.
+        if url.host in self.unreachable_hosts:
+            raise aiohttp.ClientConnectionError(
+                f"simulated: {url.host} unreachable",
+            )
         self.calls.append((method.upper(), url.path))
 
         if self.mode == "offline":
@@ -591,6 +604,21 @@ class WiCANDeviceSimulator:
         self.api.log_files[name] = content
         if active:
             self.api.active_log_file = name
+
+    def set_vpn(self, vpn_ip: str) -> None:
+        """Make the device's API reachable on its VPN tunnel address too."""
+        assert self.api is not None, "attach_api() must be called first"
+        self.api.add_base(f"http://{vpn_ip}")
+
+    def leave_home(self) -> None:
+        """Simulate the car driving away: LAN addresses stop answering."""
+        assert self.api is not None, "attach_api() must be called first"
+        self.api.unreachable_hosts.update({self.ip, self.hostname})
+
+    def return_home(self) -> None:
+        """Simulate the car back on the home network."""
+        assert self.api is not None, "attach_api() must be called first"
+        self.api.unreachable_hosts.difference_update({self.ip, self.hostname})
 
     def ota_to_v6(
         self,

@@ -19,6 +19,7 @@
 | 6 | OTA: keep accepting the legacy `/upload/ota.bin` on V6 WiCAN for ≥2 releases; new products only need `/api/ota/upload` | XS | HA updates devices mid-transition |
 | 7 | ESPNetlink standalone: same core surface + `/api/gps` + `gps` in the push + LTE fields in `status` | M | GPS/LTE products need a defined telemetry shape |
 | 8 | `GET /api/logger/export?stream=params&since=<epoch>&limit=<n>` — cursor-based JSONL export of the data_logger params stream | M | Offline-drive history backfill into HA long-term statistics (see `HISTORICAL_DATA_SYNC.md`) |
+| 9 | LTE data-saver posting profile: per-uplink interval, on-change deadband pushes, config-section suppression, gzip bodies, keep-alive | M | IoT-SIM users: cut cellular data from ~0.5–1.5 MB per driving hour to tens of KB |
 
 ## Details
 
@@ -184,6 +185,33 @@ files over `/api/fs` (so users get backfill on current firmware if they
 set the params stream to jsonl or csv). Shipping the export route makes
 the sync format-agnostic and lock-proof with zero integration changes.
 
+### 9. LTE data-saver posting profile (IoT SIMs)
+
+Today's push is wasteful on metered links: the full `status` + the
+entire `config` (PID metadata!) repeat every interval, over a fresh
+HTTPS handshake. At a 15 s interval that is roughly 0.5–1.5 MB per
+driving hour. Requested knobs (each independently useful):
+
+1. **Per-uplink interval**: `interval_lte` (e.g. 120–300 s) alongside
+   the WiFi `interval`; the device knows which uplink it is on.
+2. **On-change pushes with deadbands**: only PIDs whose value moved by
+   a configurable delta since the last push (event_manager already has
+   the machinery); periodic full push as a keyframe (e.g. every 10th).
+3. **Suppress the `config` section** except on first push after boot or
+   when the PID table changes. This is pure waste today — the
+   integration persists PID config and never needs it repeated.
+4. **`Content-Encoding: gzip`** request bodies (JSON compresses 5–10×).
+   **The integration accepts gzip as of 2026-07-10** (bounded,
+   bomb-guarded) — firmware can ship this independently of the other
+   items.
+5. **HTTP keep-alive / session reuse** toward the webhook URL — for
+   HTTPS (Nabu Casa) the TLS handshake dominates small pushes.
+6. Ultimate saver, already supported HA-side: **heartbeat-only mode** —
+   on LTE push a minimal `{status:{device_id,fw,hw}, gps}` heartbeat,
+   log everything to SD (`data_logger`), and let the integration's
+   history backfill fill statistics when home on WiFi. Tens of KB per
+   hour, full history after the drive.
+
 ## What the integration already handles (no firmware change needed)
 
 - V6 detection via `bits` in `/api/status`; component discovery via
@@ -195,6 +223,16 @@ the sync format-agnostic and lock-proof with zero integration changes.
 - A device asleep/unreachable while HA starts: capabilities are learned
   from a rate-limited re-probe once the device pushes telemetry again;
   a transient probe failure never erases already-known capabilities.
+- Roaming control over WireGuard/Tailscale (shipped 2026-07-10): the
+  pushed `vpn_ip` becomes the backup control endpoint (local address
+  first, tunnel second). **One firmware confirmation needed:** the
+  network-trust lockdown must treat the VPN netif as a trusted
+  management path for `/api/*`, or HA reaches the device over the
+  tunnel and gets 403. Also confirm the V6 push payload carries
+  `vpn_ip` like the legacy payload does.
+- Gzip-compressed pushes (shipped 2026-07-10): `Content-Encoding: gzip`
+  bodies are accepted with bounded, bomb-guarded decompression — ask #9
+  item 4 can ship independently of the rest.
 - Malformed/hostile API answers (garbage bodies, giant component lists,
   oversized responses) degrade gracefully — proven by the device-type
   simulation matrix (`tests/test_device_type_matrix.py`).

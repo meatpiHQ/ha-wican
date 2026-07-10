@@ -78,6 +78,16 @@ sleep mode), the entities are marked **unavailable** after several missed
 intervals, and become available again on the next push. A repair issue is raised
 if Home Assistant cannot register its webhook on the device at all.
 
+Two behaviors help devices on the road:
+
+- **Compressed pushes:** the webhook accepts `Content-Encoding: gzip` bodies,
+  so firmware can cut LTE data use substantially once it compresses payloads.
+- **VPN backup endpoint:** if the device reports a connected WireGuard or
+  Tailscale tunnel (`vpn_ip` in its status), Home Assistant uses that address
+  as a backup when the local address stops answering — control buttons and
+  history sync keep working while the car is away, provided Home Assistant
+  can route into the VPN network.
+
 ## Installation
 
 ### Prerequisites

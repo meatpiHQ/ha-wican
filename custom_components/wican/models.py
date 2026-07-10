@@ -26,6 +26,9 @@ class WiCANRuntimeData:
     post_interval: int
     device_host: str | None = None
     device_ip: str | None = None
+    # Device-reported VPN tunnel address (WireGuard/Tailscale), used as the
+    # backup control endpoint when the local address is unreachable.
+    device_vpn_ip: str | None = None
     cached_resolved_ip: str | None = None
     cache_timestamp: float = 0.0
     # Webhook-registration coalescing (see _async_request_webhook_registration)

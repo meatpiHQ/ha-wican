@@ -372,6 +372,42 @@ no validation. Reworked:
   and a matrix parametrization proving the button exists on every
   device type.
 
+### Phase 11 — Roaming support: gzip pushes + VPN-tunnel backup endpoint
+(added 2026-07-10, on explicit request after the roaming/LTE analysis)
+
+**Gzip webhook acceptance** (LTE data saving, firmware ask #9 item 4):
+pushes may arrive `Content-Encoding: gzip`. aiohttp inflates request
+bodies transparently but only bounds the *compressed* size, so the
+handler now does a bounded accumulate-read (`MAX_WEBHOOK_BODY_BYTES`,
+2 MiB) — a decompression bomb stops at the cap (aiohttp's own payload
+guard additionally aborts suspicious streams mid-read). Oversized bodies
+get 413; broken gzip/JSON gets the existing 422; plain JSON is
+byte-for-byte unchanged. Behavior matrix pinned by
+`tests/test_webhook_gzip.py` (7 tests incl. bomb/truncation/garbage).
+
+**VPN-tunnel backup endpoint** (roaming control for WireGuard/Tailscale
+users): the device already pushes `vpn_status` + `vpn_ip`; the
+integration now records the tunnel address (validated — private/ULA and
+Tailscale CGNAT `100.64/10` ranges ONLY, so a hostile payload can never
+steer control traffic to an arbitrary internet host), clears it when the
+VPN reports down, and persists it across restarts. All HA→device traffic
+uses an ordered candidate list — **local first, VPN as backup**, push
+source IP last: the capability probe binds the first reachable
+candidate (per-candidate error containment), webhook registration gained
+the VPN endpoint, and a button press failing on a dead endpoint
+schedules a re-probe so the next press works over the tunnel. Simulator
+grew per-host reachability (`leave_home`/`return_home`/`set_vpn`);
+`tests/test_vpn_fallback.py` (27 tests) covers validation, capture/
+clear/persist, away-rebind, at-home preference, press-failure rebind,
+and return-home rebind.
+
+Rejected in this phase: manual gzip decompression in the handler
+(aiohttp already inflates — doing it again double-decompresses;
+discovered empirically after an earlier false start). A webhook-response
+command mailbox was analyzed for Nabu-Casa-only roaming control and
+deliberately not pursued (meatpi decision 2026-07-10): those users get
+live telemetry everywhere and control whenever the car is home.
+
 ## 5. What explicitly did NOT change (backward compatibility)
 
 - Webhook payload handling, identity validation, sanitization,
