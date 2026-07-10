@@ -145,11 +145,16 @@ saw "Unknown error occurred" instead of a friendly abort.
 **Fix (2026-07-11):** both creation steps abort with `no_url_available`
 (translated message pointing at Settings > System > Network).
 
-### M4. Manual + zeroconf setup of the same device duplicates entries
+### M4. Manual + zeroconf setup of the same device duplicates entries — FIXED
 
 `config_flow.py:62-65` (normalized-URL unique_id) vs `:143-155` (MAC-based).
-The two never collide → two entries, two webhooks, duplicated entities for
+The two never collided → two entries, two webhooks, duplicated entities for
 one physical device.
+**Fix (2026-07-11):** both flows also match existing entries by
+connection address (host tokens normalized across URL/hostname/IP forms).
+Zeroconf discovery of a manual entry adopts it — upgrading it to the
+stable MAC unique_id and refreshing its connection info — instead of
+creating a duplicate; a manual add of a discovered device aborts.
 
 ### M5. Changed PID unit/class persists only if a new PID arrives in the same push — FIXED
 
@@ -191,9 +196,11 @@ params with a logged exception.
   portal, proxy) → `AttributeError` outside the handled exception set.~~
   **FIXED** with H4 (non-list body → `UpdateFailed`; non-dict elements
   skipped).
-- OPEN: one coordinator per config entry, each polling hourly, unauthenticated:
-  N devices multiply against GitHub's 60/hr per-IP limit. A shared singleton
-  coordinator would remove the multiplier.
+- ~~One coordinator per config entry, each polling hourly, unauthenticated:
+  N devices multiply against GitHub's 60/hr per-IP limit.~~ **FIXED**
+  (2026-07-11): a per-hass shared fetch serves all coordinators from one
+  request per interval; failures are not cached; per-stream filtering
+  still happens per coordinator.
 
 ---
 
@@ -211,12 +218,11 @@ params with a logged exception.
   `v`/`V`; `_normalize_version` strips suffixes case-insensitively.
 - **L5** `device_tracker.py:262-275`: restored GPS coordinates skip the range
   validation live updates get — corrupt restore (lat=999) accepted.
-- **L6** `device_tracker.py:111-122` vs `entity.py:96-103`: tracker hardcodes
-  `manufacturer="MeatPi"` / `model=hw_version` while other entities use the
-  profile — device registry flip-flops depending on registration order.
-- **L7** `diagnostics.py:48-53`: entity collection by `sensor.wican_` prefix —
-  leaks sibling entries' states in multi-device installs; misses everything
-  when the entry is renamed.
+- **L6** — FIXED (2026-07-11): the tracker derives manufacturer/model
+  from the device profile exactly like `WiCANEntity.device_info`.
+- **L7** — FIXED (2026-07-11): diagnostics collect entities via the
+  entity registry scoped to the config entry — no sibling leakage, rename
+  safe.
 - **L8** `__init__.py:1168-1200`, `api.py:111-124`: some HTTP responses never
   read/released → "Unclosed response" connection churn under the shared
   session.

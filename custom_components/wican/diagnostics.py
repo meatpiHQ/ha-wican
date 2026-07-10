@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_WEBHOOK_ID
+from homeassistant.helpers import entity_registry as er
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -46,14 +47,21 @@ async def async_get_config_entry_diagnostics(
     # Redact sensitive data
     entry_data = async_redact_data(dict(config_entry.data), TO_REDACT)
 
-    # Collect all WiCAN entity states
+    # Collect THIS entry's entity states via the registry: a name-prefix
+    # match would leak sibling devices' states in multi-car installs and
+    # miss everything once the entry is renamed.
     wican_entities = {}
-    for state in hass.states.async_all():
-        if state.entity_id.startswith(("sensor.wican_", "binary_sensor.wican_")):
-            wican_entities[state.entity_id] = {
-                "state": state.state,
-                "attributes": dict(state.attributes),
-            }
+    registry = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(
+        registry, config_entry.entry_id,
+    ):
+        state = hass.states.get(registry_entry.entity_id)
+        if state is None:
+            continue
+        wican_entities[state.entity_id] = {
+            "state": state.state,
+            "attributes": dict(state.attributes),
+        }
 
     return {
         "entry": {

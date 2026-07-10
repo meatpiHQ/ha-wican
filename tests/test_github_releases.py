@@ -646,3 +646,69 @@ async def test_usb_device_accepts_combined_release_with_usb_asset(
         await coordinator.async_refresh()
 
     assert coordinator.data.get("tag_name") == "v4.13"
+
+
+async def test_releases_fetch_shared_across_coordinators(
+    hass: HomeAssistant,
+) -> None:
+    """N entries make ONE GitHub request per interval, not N.
+
+    Regression (M8): each config entry polled GitHub hourly on its own,
+    multiplying against the 60/hour unauthenticated per-IP limit. The
+    fetch is now shared per hass instance; per-stream filtering still
+    happens per coordinator, from the same cached list.
+    """
+    releases = [
+        {"tag_name": "v4.46", "name": "WiCAN v4.46", "prerelease": False},
+        {"tag_name": "v4.45p", "name": "WiCAN-PRO v4.45", "prerelease": False},
+    ]
+
+    with patch(
+        "custom_components.wican.github_releases.async_get_clientsession"
+    ) as mock_session:
+        mock_response = AsyncMock()
+        mock_response.json = AsyncMock(return_value=releases)
+        mock_response.raise_for_status = MagicMock()
+        mock_get = AsyncMock(return_value=mock_response)
+        mock_session.return_value.get = mock_get
+
+        obd = GitHubReleasesCoordinator(hass, stream="obd")
+        pro = GitHubReleasesCoordinator(hass, stream="pro")
+        await obd.async_refresh()
+        await pro.async_refresh()
+
+    # One HTTP request served both coordinators...
+    assert mock_get.await_count == 1
+    # ...and each still got its own stream's latest.
+    assert obd.data.get("tag_name") == "v4.46"
+    assert pro.data.get("tag_name") == "v4.45p"
+
+
+async def test_releases_fetch_failure_not_cached(
+    hass: HomeAssistant,
+) -> None:
+    """A failed shared fetch is retried, not served from the cache."""
+    from aiohttp import ClientError as AioClientError
+
+    releases = [
+        {"tag_name": "v4.46", "name": "WiCAN v4.46", "prerelease": False},
+    ]
+
+    with patch(
+        "custom_components.wican.github_releases.async_get_clientsession"
+    ) as mock_session:
+        good_response = AsyncMock()
+        good_response.json = AsyncMock(return_value=releases)
+        good_response.raise_for_status = MagicMock()
+        mock_get = AsyncMock(side_effect=[AioClientError("boom"), good_response])
+        mock_session.return_value.get = mock_get
+
+        coordinator = GitHubReleasesCoordinator(hass, stream="obd")
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success is False
+
+        await coordinator.async_refresh()
+
+    assert coordinator.last_update_success is True
+    assert coordinator.data.get("tag_name") == "v4.46"
+    assert mock_get.await_count == 2

@@ -108,10 +108,15 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
         if not isinstance(config_url, str) or not config_url.startswith("http"):
             config_url = None
 
+        # Derive manufacturer/model exactly like WiCANEntity.device_info:
+        # the tracker registers against the same device, and a mismatch
+        # makes the registry entry flip-flop depending on which entity
+        # registered last (a catalog-branded product showed "MeatPi").
+        profile = self.config_entry.runtime_data.device_profile
         device_info = DeviceInfo(
             identifiers={(DOMAIN, device_id)},
-            manufacturer="MeatPi",
-            model=info.get("hw_version", "Unknown"),
+            manufacturer=profile.manufacturer,
+            model=info.get("hw_version") or profile.model,
             # Match the device name used by every other WiCAN entity so the
             # tracker shares their device. Existing installs keep their
             # already-registered entity_id (HA pins it at creation); only new

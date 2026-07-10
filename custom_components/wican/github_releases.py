@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 import aiohttp
@@ -12,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    DOMAIN,
     GITHUB_API_RELEASES_URL,
     GITHUB_API_TIMEOUT,
     GITHUB_OWNER,
@@ -25,6 +27,8 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 UPDATE_INTERVAL = timedelta(seconds=GITHUB_RELEASES_UPDATE_INTERVAL)
+
+_SHARED_FETCH_KEY = f"{DOMAIN}_releases_shared_fetch"
 
 # WiCAN firmware ships in three hardware streams, distinguished by the
 # version-tag suffix letter: v4.45p (PRO), v4.13u (USB), v4.46 (OBD).
@@ -141,69 +145,106 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return True
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch latest release from GitHub."""
-        url = GITHUB_API_RELEASES_URL.format(
-            owner=GITHUB_OWNER,
-            repo=GITHUB_REPO,
-        )
+        """Return the latest installable release for this device's stream."""
+        releases = await _get_shared_fetch(self.hass).async_get(self.hass)
 
-        session = async_get_clientsession(self.hass)
+        # Filter for latest non-prerelease
+        stable_releases = [
+            r
+            for r in releases
+            if isinstance(r, dict) and not r.get("prerelease", False)
+        ]
 
-        try:
-            async with asyncio.timeout(GITHUB_API_TIMEOUT):
-                response = await session.get(
-                    url,
-                    headers={"Accept": "application/vnd.github.v3+json"},
-                )
-                response.raise_for_status()
-                releases = await response.json()
+        if not stable_releases:
+            _LOGGER.warning("No stable releases found")
+            return {}
 
-            # A proxy or captive portal can return 200 with a non-list
-            # body; treat any unexpected shape as a failed update.
-            if not isinstance(releases, list):
-                raise UpdateFailed(
-                    f"Unexpected GitHub response shape: {type(releases).__name__}",
-                )
+        # Keep only the releases this device can actually install
+        # (PRO / USB / OBD) so e.g. a USB device is never offered a
+        # newer OBD-only release — which has no USB asset to install.
+        device_specific_releases = [
+            r
+            for r in stable_releases
+            if release_matches_stream(r, self._stream)
+        ]
 
-            # Filter for latest non-prerelease
-            stable_releases = [
-                r
-                for r in releases
-                if isinstance(r, dict) and not r.get("prerelease", False)
-            ]
-
-            if not stable_releases:
-                _LOGGER.warning("No stable releases found")
-                return {}
-
-            # Keep only the releases this device can actually install
-            # (PRO / USB / OBD) so e.g. a USB device is never offered a
-            # newer OBD-only release — which has no USB asset to install.
-            device_specific_releases = [
-                r
-                for r in stable_releases
-                if release_matches_stream(r, self._stream)
-            ]
-
-            if not device_specific_releases:
-                _LOGGER.warning(
-                    "No stable %s releases found (found %d releases for other streams)",
-                    self._stream.upper(),
-                    len(stable_releases),
-                )
-                return {}
-
-            latest = device_specific_releases[0]
-            _LOGGER.debug(
-                "Latest %s release: %s",
+        if not device_specific_releases:
+            _LOGGER.warning(
+                "No stable %s releases found (found %d releases for other streams)",
                 self._stream.upper(),
-                latest.get("tag_name"),
+                len(stable_releases),
             )
-        except TimeoutError as err:
-            raise UpdateFailed("Timeout fetching GitHub releases") from err
-        except aiohttp.ClientError as err:
-            raise UpdateFailed(f"Error fetching GitHub releases: {err}") from err
-        except (ValueError, KeyError) as err:
-            raise UpdateFailed(f"Invalid response from GitHub: {err}") from err
-        else:
-            return cast("dict[str, Any]", latest)
+            return {}
+
+        latest = device_specific_releases[0]
+        _LOGGER.debug(
+            "Latest %s release: %s",
+            self._stream.upper(),
+            latest.get("tag_name"),
+        )
+        return latest
+
+
+async def _async_fetch_releases(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Fetch the raw release list from GitHub. Raises UpdateFailed."""
+    url = GITHUB_API_RELEASES_URL.format(owner=GITHUB_OWNER, repo=GITHUB_REPO)
+    session = async_get_clientsession(hass)
+    try:
+        async with asyncio.timeout(GITHUB_API_TIMEOUT):
+            response = await session.get(
+                url,
+                headers={"Accept": "application/vnd.github.v3+json"},
+            )
+            response.raise_for_status()
+            releases = await response.json()
+    except TimeoutError as err:
+        raise UpdateFailed("Timeout fetching GitHub releases") from err
+    except aiohttp.ClientError as err:
+        raise UpdateFailed(f"Error fetching GitHub releases: {err}") from err
+    except (ValueError, KeyError) as err:
+        raise UpdateFailed(f"Invalid response from GitHub: {err}") from err
+
+    # A proxy or captive portal can return 200 with a non-list body;
+    # treat any unexpected shape as a failed update.
+    if not isinstance(releases, list):
+        raise UpdateFailed(
+            f"Unexpected GitHub response shape: {type(releases).__name__}",
+        )
+    return cast("list[dict[str, Any]]", releases)
+
+
+class _SharedReleasesFetch:
+    """One GitHub fetch serving every config entry.
+
+    Each entry's coordinator polls hourly; without sharing, N devices
+    multiply against GitHub's 60/hour unauthenticated per-IP limit
+    (which the params and catalog fetches also consume). The first
+    coordinator to poll after expiry refreshes the cache; the rest are
+    served from it. Failures are not cached, so a coordinator retries
+    the real fetch on its next poll.
+    """
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._releases: list[dict[str, Any]] | None = None
+        self._fetched_at = 0.0
+
+    async def async_get(self, hass: HomeAssistant) -> list[dict[str, Any]]:
+        async with self._lock:
+            now = time.monotonic()
+            if (
+                self._releases is not None
+                and now - self._fetched_at < GITHUB_RELEASES_UPDATE_INTERVAL
+            ):
+                return self._releases
+            releases = await _async_fetch_releases(hass)
+            self._releases = releases
+            self._fetched_at = time.monotonic()
+            return releases
+
+
+def _get_shared_fetch(hass: HomeAssistant) -> _SharedReleasesFetch:
+    shared = hass.data.get(_SHARED_FETCH_KEY)
+    if shared is None:
+        shared = hass.data[_SHARED_FETCH_KEY] = _SharedReleasesFetch()
+    return cast("_SharedReleasesFetch", shared)

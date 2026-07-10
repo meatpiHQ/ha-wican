@@ -36,6 +36,29 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _address_tokens(*values: Any) -> set[str]:
+    """Reduce address strings (URLs, hostnames, IPs) to comparable hosts.
+
+    "http://wican_1.local:80", "wican_1.local." and "WICAN_1.LOCAL" all
+    reduce to "wican_1.local", so the same physical device is recognized
+    across the manual flow (URL-keyed) and zeroconf (MAC-keyed).
+    """
+    tokens: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        candidate = value.strip().lower().rstrip(".")
+        if not candidate:
+            continue
+        try:
+            url = URL(candidate if "://" in candidate else f"http://{candidate}")
+            host = url.host
+        except ValueError:
+            host = None
+        tokens.add(host.rstrip(".") if host else candidate)
+    return tokens
+
+
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for MeatPi device discovery via Zeroconf."""
 
@@ -49,6 +72,50 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.discovered_name: str | None = None
         self.discovered_unique_id: str | None = None
         self.discovered_device_type: str | None = None
+
+    def _entry_matching_address(
+        self, tokens: set[str],
+    ) -> config_entries.ConfigEntry | None:
+        """Find an existing entry that reaches one of these addresses.
+
+        Manual entries are keyed by connection URL while zeroconf entries
+        are keyed by MAC, so unique_id comparison alone cannot see that
+        both describe the same physical device (M4).
+        """
+        if not tokens:
+            return None
+        for entry in self._async_current_entries(include_ignore=False):
+            known = _address_tokens(
+                entry.data.get("mdns"),
+                entry.data.get("host"),
+                entry.data.get("ip"),
+                entry.unique_id,
+            )
+            if tokens & known:
+                return entry
+        return None
+
+    def _adopt_matching_entry(
+        self,
+        tokens: set[str],
+        unique_id: str,
+        connection_updates: dict[str, str],
+    ) -> bool:
+        """Upgrade an address-matching entry to this discovery's unique_id.
+
+        Returns True when an existing entry adopted the discovery (the
+        flow should abort as already configured).
+        """
+        matching = self._entry_matching_address(tokens)
+        if matching is None:
+            return False
+        self.hass.config_entries.async_update_entry(
+            matching,
+            unique_id=unique_id,
+            data={**matching.data, **connection_updates},
+        )
+        self.hass.config_entries.async_schedule_reload(matching.entry_id)
+        return True
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle manual setup initiated by the user."""
@@ -64,6 +131,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if manual_unique_id:
                 await self.async_set_unique_id(manual_unique_id)
                 self._abort_if_unique_id_configured()
+
+            # The same device may already exist under a MAC-keyed unique_id
+            # (zeroconf discovery): match by connection address so a manual
+            # re-add cannot create a duplicate entry with its own webhook.
+            if self._entry_matching_address(_address_tokens(mdns, host)):
+                return self.async_abort(reason="already_configured")
 
             webhook_id = uuid4().hex
             try:
@@ -169,13 +242,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(unique_id)
         # If already configured, refresh the stored connection info from this
         # discovery so IP/hostname changes propagate (discovery-update-info).
-        self._abort_if_unique_id_configured(
-            updates={
-                k: v
-                for k, v in {"mdns": mdns_url, CONF_HOST: host_url}.items()
-                if v
-            },
-        )
+        connection_updates = {
+            k: v
+            for k, v in {"mdns": mdns_url, CONF_HOST: host_url}.items()
+            if v
+        }
+        self._abort_if_unique_id_configured(updates=connection_updates)
+
+        # The device may already exist as a manual entry keyed by its
+        # connection URL rather than this MAC: adopt the stable MAC-based
+        # unique_id on that entry instead of creating a duplicate.
+        if self._adopt_matching_entry(
+            _address_tokens(hostname, host, host_ip), unique_id, connection_updates,
+        ):
+            return self.async_abort(reason="already_configured")
 
         _LOGGER.info("MeatPi device discovered via Zeroconf: name=%s hostname=%s url=%s", name, hostname, mdns_url)
 

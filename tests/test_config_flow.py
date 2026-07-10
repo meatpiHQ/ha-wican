@@ -782,3 +782,82 @@ async def test_zeroconf_confirm_no_url_available_aborts_cleanly(
 
     assert result2["type"] == FlowResultType.ABORT
     assert result2["reason"] == "no_url_available"
+
+
+async def test_zeroconf_adopts_existing_manual_entry(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Discovery of a manually added device must not create a duplicate.
+
+    Regression (M4): manual entries are keyed by connection URL and
+    zeroconf entries by MAC, so the unique_id check never collided — one
+    physical device ended up with two entries, two webhooks, and
+    duplicated entities. The discovery now adopts the manual entry
+    (upgrading it to the stable MAC unique_id) and aborts.
+    """
+    manual = MockConfigEntry(
+        domain=DOMAIN,
+        title="wican_car.local",
+        data={
+            CONF_WEBHOOK_ID: "manual_webhook_id",
+            "mdns": "http://wican_car.local",
+        },
+        unique_id="http://wican_car.local",
+    )
+    manual.add_to_hass(hass)
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.77",
+        ip_addresses=["192.168.1.77"],
+        hostname="wican_car.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={"mac": b"AA:BB:CC:DD:EE:77"},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    # Still exactly one entry, now keyed by the stable MAC.
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert len(entries) == 1
+    assert entries[0].unique_id == "aabbccddee77"
+    assert entries[0].data["host"] == "http://192.168.1.77"
+
+
+async def test_manual_add_of_discovered_device_aborts(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Manually re-adding a zeroconf-discovered device must not duplicate."""
+    discovered = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Car",
+        data={
+            CONF_WEBHOOK_ID: "zeroconf_webhook_id",
+            "mdns": "http://wican_car.local",
+            "host": "http://192.168.1.77",
+        },
+        unique_id="aabbccddee77",
+    )
+    discovered.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"mdns": "wican_car.local"},
+    )
+
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1

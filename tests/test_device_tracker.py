@@ -387,3 +387,30 @@ async def test_device_tracker_gps_parse_error_logging(
     entity_id = "device_tracker.wican_device_location"
     state = hass.states.get(entity_id)
     assert state.state == STATE_UNAVAILABLE
+
+
+async def test_tracker_device_info_matches_shared_entity_info(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """The tracker registers the same manufacturer/model as other entities.
+
+    Regression (L6): the tracker hardcoded manufacturer="MeatPi" and
+    model=hw_version-or-"Unknown" while every other entity derives both
+    from the device profile — the registry entry flip-flopped depending
+    on which entity registered last.
+    """
+    entry = init_integration
+    profile = entry.runtime_data.device_profile
+
+    from custom_components.wican.device_tracker import WiCANDeviceTrackerEntity
+
+    tracker_info = WiCANDeviceTrackerEntity(entry).device_info
+
+    assert tracker_info["manufacturer"] == profile.manufacturer
+    assert tracker_info["model"] == (
+        entry.data.get("hw_version") or profile.model
+    )
+    assert tracker_info["identifiers"] == {
+        ("wican", entry.data.get("device_id") or entry.entry_id),
+    }

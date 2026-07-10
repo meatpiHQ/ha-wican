@@ -141,3 +141,41 @@ async def test_diagnostics_includes_runtime_data(
     assert diagnostics["runtime_data"]["post_interval"] == 1000
     assert "device_host" in diagnostics["runtime_data"]
     assert "device_ip" in diagnostics["runtime_data"]
+
+
+async def test_diagnostics_scoped_to_the_entry(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Diagnostics include only this entry's entities, whatever its name.
+
+    Regression (L7): entities were collected by the "sensor.wican_" name
+    prefix, which leaked sibling entries' states in multi-device installs
+    and collected nothing once the entry was renamed.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    entry = init_integration
+
+    # A sibling entity from ANOTHER (unloaded) WiCAN entry with a
+    # matching name prefix must not leak into this entry's dump.
+    other = MockConfigEntry(domain="wican", title="WiCAN Other")
+    other.add_to_hass(hass)
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "sensor",
+        "wican",
+        "other_batt",
+        suggested_object_id="wican_other_batt_voltage",
+        config_entry=other,
+    )
+    hass.states.async_set("sensor.wican_other_batt_voltage", "11.9")
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diagnostics["entity_count"] > 0
+    assert "sensor.wican_other_batt_voltage" not in diagnostics["entities"]
+    # Entities of this entry are present regardless of naming.
+    assert any(
+        eid.endswith("batt_voltage") for eid in diagnostics["entities"]
+    )
