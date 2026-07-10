@@ -179,3 +179,32 @@ async def test_diagnostics_scoped_to_the_entry(
     assert any(
         eid.endswith("battery_voltage") for eid in diagnostics["entities"]
     )
+
+
+async def test_diagnostics_redacts_vehicle_location(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_client,
+) -> None:
+    """The vehicle's coordinates never appear in a diagnostics dump.
+
+    Entity attributes are dumped with each state; the device tracker's
+    latitude/longitude are location data and must be redacted like the
+    webhook secret.
+    """
+    entry = init_integration
+    client = await hass_client()
+    await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}",
+        json={
+            "status": {"device_id": "test_device_123", "uptime": "x"},
+            "gps": {"latitude": -37.8123, "longitude": 144.9612, "accuracy": 5},
+        },
+    )
+    await hass.async_block_till_done()
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    serialized = json.dumps(diagnostics, default=str)
+    assert "-37.8123" not in serialized
+    assert "144.9612" not in serialized

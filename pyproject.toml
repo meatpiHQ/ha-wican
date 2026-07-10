@@ -88,13 +88,13 @@ precision = 2
 show_missing = true
 
 [tool.mypy]
-# Strict typing gate for the Platinum quality-scale rule. Approximates Home
-# Assistant core's strict check for a custom component. Run with:
+# Strict typing gate for the Platinum quality-scale rule: full strict mode
+# with normal import following (HA core and aiohttp ship type information,
+# so nothing is silently reduced to Any). Run with:
 #   python -m mypy custom_components/wican
 python_version = "3.13"
 strict = true
-follow_imports = "silent"
-ignore_missing_imports = true
+follow_imports = "normal"
 warn_unused_ignores = true
 files = ["custom_components/wican"]
 

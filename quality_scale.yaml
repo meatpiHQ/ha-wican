@@ -4,13 +4,16 @@
 # MeatPi Integration Quality Scale Assessment
 # (brand: MeatPi; devices: WiCAN OBD/USB/Pro, ESPNetlink upcoming;
 #  HA domain remains `wican` — see notes/MEATPI_INTEGRATION_PLAN.md D1)
-# Current: Gold (code complete; `brands` PR is the only external blocker)
-# Target: Platinum (strict typing done; hardening + coverage done)
+# Current: Platinum on the code side — all three Platinum rules verified
+# (strict mypy with normal import following; injected websession; all-async
+# I/O). The `brands` logo/icon PR to home-assistant/brands remains the only
+# item, and it is an external submission, not a code change.
+# 2026-07 robustness audit: all findings fixed (notes/ROBUSTNESS_AUDIT_2026-07.md)
 
 integration: meatpi (brand)
 domain: wican
 version: "2.1.0"
-assessed_date: "2026-07-10"
+assessed_date: "2026-07-11"
 
 # Quality Scale Levels:
 # - No score: Not meeting Bronze requirements
@@ -19,7 +22,7 @@ assessed_date: "2026-07-10"
 # - Gold: High-quality integration
 # - Platinum: Exemplary integration (reserved for core team)
 
-current_level: gold
+current_level: platinum  # code-side; brands logo PR pending externally
 target_level: platinum
 
 # ============================================================================

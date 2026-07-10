@@ -176,9 +176,11 @@ rules:
     comment: >
       All user-facing raised HomeAssistantError/ConfigEntryError use
       translation_domain + translation_key with matching entries under
-      exceptions (device_mismatch, connection_error, wican_error, firmware
-      download/upload/version, update_in_progress, device_unreachable,
-      api_not_available, api_command_failed).
+      exceptions (device_mismatch, firmware download/upload/version,
+      update_in_progress, device_unreachable, api_not_available,
+      api_command_failed, definitions_refresh_failed). Config-flow abort
+      reasons (no_url_available, no_host, not_wican) are translated under
+      config.abort.
   icon-translations:
     status: done
     comment: >

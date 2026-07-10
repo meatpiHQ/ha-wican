@@ -84,7 +84,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         # Create entity description for parent class
         entity_description = UpdateEntityDescription(
             key="firmware",
-            name="Firmware",
+            translation_key="firmware",
             device_class=UpdateDeviceClass.FIRMWARE,
         )
         super().__init__(config_entry, entity_description)

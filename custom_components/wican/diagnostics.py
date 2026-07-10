@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 # publicly routable address for the device.
 TO_REDACT = {CONF_WEBHOOK_ID, "webhook_url", "vpn_ip"}
 
+# Entity attributes dumped with each state: the device tracker carries the
+# vehicle's location, which HA treats as sensitive in diagnostics.
+ATTRIBUTES_TO_REDACT = {"latitude", "longitude"}
+
 
 def _history_sync_diagnostics(config_entry: WiCANConfigEntry) -> dict[str, Any] | None:
     """Summarize the last history-backfill run for diagnostics."""
@@ -60,7 +64,9 @@ async def async_get_config_entry_diagnostics(
             continue
         wican_entities[state.entity_id] = {
             "state": state.state,
-            "attributes": dict(state.attributes),
+            "attributes": async_redact_data(
+                dict(state.attributes), ATTRIBUTES_TO_REDACT,
+            ),
         }
 
     return {

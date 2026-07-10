@@ -33,16 +33,14 @@
       "abort": {
         "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
         "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
-        "cloud_not_connected": "[%key:common::config_flow::abort::cloud_not_connected%]",
-        "webhook_not_internet_accessible": "[%key:common::config_flow::abort::webhook_not_internet_accessible%]",
+        "no_host": "The discovered device did not provide a usable network address.",
+        "not_wican": "The discovered service is not a MeatPi device.",
         "no_url_available": "Home Assistant has no HTTP address the device could push to. Set the internal URL under Settings > System > Network, then retry setup."
       },
       "create_entry": {
         "default": "To send events to Home Assistant, you will need to set up a webhook.\n\nOpen WiCAN and go to *Settings → Services → Automation → Webhooks*\n\nEnable *Webhooks* and fill in the following webhook in the URL field:\n\n`{webhook_url}`\n\nSee [the documentation]({docs_url}) for further details."
       },
       "error": {
-        "connection_error": "Failed to connect to device: {error}",
-        "wican_error": "WiCAN error: {error}",
         "device_mismatch": "Device ID mismatch. Expected {expected}, got {actual}. The device may have been replaced or the configuration is pointing to a different device. Please delete and reconfigure this integration.",
         "unknown": "Unknown error occurred"
       }
@@ -124,12 +122,6 @@
       },
       "device_mismatch": {
         "message": "Device ID mismatch. Expected {expected}, got {actual}. The device may have been replaced or the configuration points to a different device."
-      },
-      "connection_error": {
-        "message": "Failed to communicate with the WiCAN device: {error}"
-      },
-      "wican_error": {
-        "message": "WiCAN error: {error}"
       },
       "no_firmware_version": {
         "message": "No firmware version is available to install."
