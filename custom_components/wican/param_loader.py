@@ -1,30 +1,53 @@
-"""Parameter loader for WiCAN integration.
+"""Parameter loader for the MeatPi integration.
 
 Loads parameter definitions from the bundled params.json file, which is sourced from
 the WiCAN firmware repository:
 https://github.com/meatpiHQ/wican-fw/blob/main/.vehicle_profiles/params.json
 
-The integration will attempt to fetch updates from GitHub on reload and update
-the local cache if changes are detected.
+Runtime updates are fetched from GitHub on every config-entry setup/reload
+(coalesced across concurrent setups, cheap via ETag conditional requests)
+and persisted in Home Assistant's .storage — never into the integration
+package directory. The bundled copy is the offline fallback. Users can
+force a refresh with the "Refresh integration definitions" button.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import hashlib
+from http import HTTPStatus
 import inspect
 import json
 import logging
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, TypedDict, cast
+import time
+from typing import TYPE_CHECKING, Any, TypedDict, cast
+
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
+
+from .const import (
+    DOMAIN,
+    PARAMS_FETCH_DEDUPE_WINDOW,
+    PARAMS_MAX_BYTES,
+    PARAMS_MAX_ENTRIES,
+    PARAMS_MAX_FIELD_LENGTH,
+    PARAMS_MAX_KEY_LENGTH,
+    PARAMS_STORAGE_KEY,
+    PARAMS_STORAGE_VERSION,
+)
 
 if TYPE_CHECKING:
     from typing import Final
 
     from aiohttp import ClientSession
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+_HASS_DATA_KEY = f"{DOMAIN}_params_manager"
 
 # GitHub raw URL for params.json
 PARAMS_GITHUB_URL: Final[str] = (
@@ -200,56 +223,123 @@ def _compute_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-async def _async_get_current_params_hash() -> str | None:
-    """Get hash of current params.json file.
+def _validate_remote_params(raw: Any) -> dict[str, ParamDefinition] | None:
+    """Validate a fetched params document against strict bounds.
 
-    This performs file IO in a background thread to avoid blocking the event loop.
+    A remote document must not be able to balloon memory or storage:
+    entry count, key length, and field lengths are capped; invalid
+    entries are dropped individually. Returns None when the document is
+    structurally unusable.
     """
-    params_file = _get_params_file_path()
-    try:
-        content = await asyncio.to_thread(params_file.read_bytes)
-        return _compute_hash(content)
-    except (FileNotFoundError, OSError):
+    if not isinstance(raw, dict):
         return None
+    params: dict[str, ParamDefinition] = {}
+    dropped = 0
+    for key, value in raw.items():
+        if len(params) >= PARAMS_MAX_ENTRIES:
+            _LOGGER.warning(
+                "Fetched params.json capped at %d entries", PARAMS_MAX_ENTRIES,
+            )
+            break
+        if (
+            not isinstance(key, str)
+            or not key
+            or len(key) > PARAMS_MAX_KEY_LENGTH
+            or not isinstance(value, dict)
+        ):
+            dropped += 1
+            continue
+        description = value.get("description")
+        if not isinstance(description, str):
+            description = ""
+        raw_settings = value.get("settings")
+        settings: dict[str, str] = {}
+        if isinstance(raw_settings, dict):
+            for field, field_value in raw_settings.items():
+                if (
+                    isinstance(field, str)
+                    and isinstance(field_value, str)
+                    and len(field) <= PARAMS_MAX_FIELD_LENGTH
+                    and len(field_value) <= PARAMS_MAX_FIELD_LENGTH
+                ):
+                    settings[field] = field_value
+        params[key] = cast(
+            "ParamDefinition",
+            {
+                "description": description[:PARAMS_MAX_FIELD_LENGTH],
+                "settings": settings,
+            },
+        )
+    if dropped:
+        _LOGGER.debug("Fetched params.json: dropped %d invalid entr(ies)", dropped)
+    return params
+
+
+@dataclass(slots=True)
+class ParamsFetchResult:
+    """Outcome of one params.json fetch."""
+
+    ok: bool
+    unchanged: bool = False
+    data: dict[str, ParamDefinition] | None = None
+    etag: str | None = None
+
+
+async def _read_params_response(response: Any, etag: str | None) -> ParamsFetchResult:
+    """Turn an HTTP response into a validated ParamsFetchResult."""
+    if response.status == HTTPStatus.NOT_MODIFIED:
+        _LOGGER.debug("params.json unchanged upstream (ETag hit)")
+        return ParamsFetchResult(ok=True, unchanged=True, etag=etag)
+    if response.status != HTTPStatus.OK:
+        _LOGGER.debug(
+            "Failed to fetch params.json from GitHub: HTTP %s", response.status,
+        )
+        return ParamsFetchResult(ok=False)
+
+    declared = response.headers.get("Content-Length")
+    too_large = bool(
+        declared and declared.isdigit() and int(declared) > PARAMS_MAX_BYTES,
+    )
+    content = b"" if too_large else await response.read()
+    if too_large or len(content) > PARAMS_MAX_BYTES:
+        _LOGGER.warning("Fetched params.json too large; ignoring")
+        return ParamsFetchResult(ok=False)
+
+    try:
+        data = json.loads(content.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as err:
+        _LOGGER.warning("Failed to parse GitHub params.json: %s", err)
+        return ParamsFetchResult(ok=False)
+    validated = _validate_remote_params(data)
+    if validated is None:
+        _LOGGER.warning("Fetched params.json has an invalid shape")
+        return ParamsFetchResult(ok=False)
+    _LOGGER.debug(
+        "Fetched %d parameters from GitHub (hash: %s...)",
+        len(validated),
+        _compute_hash(content)[:8],
+    )
+    return ParamsFetchResult(
+        ok=True, data=validated, etag=response.headers.get("ETag"),
+    )
 
 
 async def async_fetch_params_from_github(
     session: ClientSession,
-) -> tuple[dict[str, ParamDefinition] | None, str | None]:
-    """Fetch params.json from GitHub.
+    *,
+    etag: str | None = None,
+) -> ParamsFetchResult:
+    """Fetch params.json from GitHub, using a conditional request when possible.
 
-    Args:
-        session: aiohttp ClientSession to use for the request.
-
-    Returns:
-        Tuple of (parsed params dict, content hash) or (None, None) on failure.
+    Never raises. ``ok=False`` means the fetch failed (network/HTTP/parse);
+    ``unchanged=True`` means the server confirmed the cached copy (HTTP 304).
     """
+    headers = {"If-None-Match": etag} if etag else None
     try:
         async with asyncio.timeout(GITHUB_FETCH_TIMEOUT):
-            response = await session.get(PARAMS_GITHUB_URL)
+            response = await session.get(PARAMS_GITHUB_URL, headers=headers)
             try:
-                if response.status != 200:
-                    _LOGGER.debug(
-                        "Failed to fetch params.json from GitHub: HTTP %s",
-                        response.status,
-                    )
-                    return None, None
-
-                content = await response.read()
-                content_hash = _compute_hash(content)
-
-                try:
-                    data = json.loads(content.decode("utf-8"))
-                except json.JSONDecodeError as err:
-                    _LOGGER.warning("Failed to parse GitHub params.json: %s", err)
-                    return None, None
-                else:
-                    _LOGGER.debug(
-                        "Fetched %d parameters from GitHub (hash: %s...)",
-                        len(data),
-                        content_hash[:8],
-                    )
-                    return data, content_hash
+                return await _read_params_response(response, etag)
             finally:
                 release_result = response.release()
                 if inspect.isawaitable(release_result):
@@ -257,60 +347,118 @@ async def async_fetch_params_from_github(
 
     except TimeoutError:
         _LOGGER.debug("Timeout fetching params.json from GitHub")
-        return None, None
+        return ParamsFetchResult(ok=False)
     except Exception as err:
         _LOGGER.debug("Error fetching params.json from GitHub: %s", err)
-        return None, None
+        return ParamsFetchResult(ok=False)
 
 
-async def async_update_params_from_github(session: ClientSession) -> bool:
-    """Fetch params.json from GitHub and update local file if changed.
+class _ParamsManager:
+    """Applies stored params, fetches updates, persists them in .storage.
 
-    Args:
-        session: aiohttp ClientSession to use for the request.
-
-    Returns:
-        True if params were updated, False otherwise.
+    The fetched copy never touches the integration package directory (the
+    bundled file is the read-only fallback). Concurrent entry setups fold
+    into a single fetch; a user-initiated refresh (the "Refresh
+    integration definitions" button) always fetches.
     """
-    # Get current hash
-    current_hash = await _async_get_current_params_hash()
 
-    # Fetch from GitHub
-    new_params, new_hash = await async_fetch_params_from_github(session)
-
-    if new_params is None:
-        _LOGGER.debug("Could not fetch params from GitHub, keeping current version")
-        return False
-
-    # Check if hash changed
-    if current_hash and current_hash == new_hash:
-        _LOGGER.debug("params.json is up to date (hash: %s...)", current_hash[:8])
-        return False
-
-    # Write updated params to file
-    params_file = _get_params_file_path()
-    try:
-        def _write_params() -> None:
-            params_file.parent.mkdir(parents=True, exist_ok=True)
-            with params_file.open("w", encoding="utf-8") as f:
-                json.dump(new_params, f, indent=2, ensure_ascii=False)
-
-        await asyncio.to_thread(_write_params)
-
-        _LOGGER.info(
-            "Updated params.json from GitHub: %d parameters (hash: %s...)",
-            len(new_params),
-            new_hash[:8] if new_hash else "unknown",
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+        self._store: Store[dict[str, Any]] = Store(
+            hass, PARAMS_STORAGE_VERSION, PARAMS_STORAGE_KEY,
         )
+        self._lock = asyncio.Lock()
+        self._applied_stored = False
+        self._etag: str | None = None
+        self._last_fetch = 0.0
 
-        # Update in-memory params
-        _PARAMS.clear()
-        _PARAMS.update(new_params)
-    except OSError as err:
-        _LOGGER.warning("Failed to write updated params.json: %s", err)
-        return False
-    else:
-        return True
+    async def _async_apply_stored(self) -> None:
+        stored = await self._store.async_load()
+        if not isinstance(stored, dict):
+            return
+        raw_etag = stored.get("etag")
+        if isinstance(raw_etag, str):
+            self._etag = raw_etag
+        validated = _validate_remote_params(stored.get("params"))
+        if validated:
+            _PARAMS.clear()
+            _PARAMS.update(validated)
+            _LOGGER.debug(
+                "Applied %d stored parameter definitions", len(validated),
+            )
+
+    async def async_sync(self, *, force: bool = False) -> bool | None:
+        """Apply stored params, then fetch updates.
+
+        Returns True when new definitions were applied, False when already
+        up to date, None when the fetch failed (stored/bundled kept).
+        """
+        async with self._lock:
+            if not self._applied_stored:
+                self._applied_stored = True
+                try:
+                    await self._async_apply_stored()
+                except Exception as err:  # storage corruption → bundled copy
+                    _LOGGER.warning("Could not apply stored params: %s", err)
+
+            now = time.monotonic()
+            if not force and self._last_fetch and (
+                now - self._last_fetch < PARAMS_FETCH_DEDUPE_WINDOW
+            ):
+                return False
+            self._last_fetch = now
+
+            result = await async_fetch_params_from_github(
+                async_get_clientsession(self._hass), etag=self._etag,
+            )
+            if not result.ok:
+                return None
+            if result.unchanged or result.data is None:
+                return False
+
+            _PARAMS.clear()
+            _PARAMS.update(result.data)
+            self._etag = result.etag
+            try:
+                await self._store.async_save(
+                    {
+                        "params": result.data,
+                        "etag": result.etag,
+                        "fetched_at": time.time(),
+                    },
+                )
+            except Exception as err:  # cache loss only; next sync re-fetches
+                _LOGGER.warning("Could not persist fetched params: %s", err)
+            _LOGGER.info(
+                "Updated parameter definitions from GitHub (%d parameters)",
+                len(result.data),
+            )
+            return True
+
+
+def _get_manager(hass: HomeAssistant) -> _ParamsManager:
+    manager = hass.data.get(_HASS_DATA_KEY)
+    if manager is None:
+        manager = _ParamsManager(hass)
+        hass.data[_HASS_DATA_KEY] = manager
+    return cast("_ParamsManager", manager)
+
+
+async def async_update_params_from_github(hass: HomeAssistant) -> bool:
+    """Sync parameter definitions at entry setup (coalesced, never raises).
+
+    Returns True when new definitions were applied.
+    """
+    return await _get_manager(hass).async_sync() is True
+
+
+async def async_force_params_refresh(hass: HomeAssistant) -> bool | None:
+    """User-initiated definitions sync (the Sync-definitions button).
+
+    Bypasses the setup dedupe window. True = updated, False = already up
+    to date, None = fetch failed.
+    """
+    return await _get_manager(hass).async_sync(force=True)
 
 
 def reload_params() -> None:

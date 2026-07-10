@@ -93,6 +93,19 @@ CATALOG_MAX_MODEL_LENGTH = 64
 CATALOG_MAX_SENSORS = 32
 CATALOG_MAX_FIELD_LENGTH = 128
 
+# PID parameter definitions (params.json). Fetched from the wican-fw
+# vehicle-profiles pipeline on every entry setup/reload (the "reload the
+# integration to get your new parameter" support flow), coalesced across
+# concurrent setups, persisted in .storage; the bundled file is the
+# offline fallback.
+PARAMS_STORAGE_KEY = f"{DOMAIN}.params"
+PARAMS_STORAGE_VERSION = 1
+PARAMS_FETCH_DEDUPE_WINDOW = 30  # seconds; folds concurrent setups into one fetch
+PARAMS_MAX_BYTES = 1048576  # 1 MiB fetch cap (file is ~55 KiB today)
+PARAMS_MAX_ENTRIES = 5000
+PARAMS_MAX_KEY_LENGTH = 128
+PARAMS_MAX_FIELD_LENGTH = 256
+
 # Device API levels (capability probe result)
 API_LEVEL_LEGACY = 0  # webhook-only firmware (pre-V6)
 API_LEVEL_V6 = 6  # full /api/* HTTP surface

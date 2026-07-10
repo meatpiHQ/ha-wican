@@ -193,6 +193,132 @@ async def test_press_without_api_raises(
         )
 
 
+REFRESH_DEFS_ENTITY = "button.wican_device_refresh_definitions"
+
+
+async def test_refresh_definitions_button_on_every_device(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """The refresh-definitions button exists even on legacy (pre-V6) devices.
+
+    It talks to GitHub, not the device, so no capability gating applies.
+    """
+    await _setup(hass, mock_config_entry)
+
+    assert hass.states.get(REFRESH_DEFS_ENTITY) is not None
+    # Control buttons stay absent on the legacy device.
+    assert hass.states.get(RESTART_ENTITY) is None
+
+
+async def test_refresh_definitions_press_refreshes_and_reloads(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A press fetches params + catalog and reloads the entry to apply."""
+    entry = await _setup(hass, mock_config_entry)
+
+    with (
+        patch(
+            "custom_components.wican.button.async_force_params_refresh",
+            return_value=True,
+        ) as params_refresh,
+        patch(
+            "custom_components.wican.button.async_refresh_device_catalog",
+            return_value=False,
+        ) as catalog_refresh,
+        patch.object(
+            hass.config_entries, "async_reload", return_value=True,
+        ) as reload_mock,
+    ):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": REFRESH_DEFS_ENTITY}, blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    params_refresh.assert_awaited_once()
+    catalog_refresh.assert_awaited_once()
+    reload_mock.assert_awaited_once_with(entry.entry_id)
+
+
+async def test_refresh_definitions_press_total_failure_raises(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Both fetches failing surfaces a translated error, no reload."""
+    await _setup(hass, mock_config_entry)
+
+    with (
+        patch(
+            "custom_components.wican.button.async_force_params_refresh",
+            return_value=None,  # fetch failed
+        ),
+        patch(
+            "custom_components.wican.button.async_refresh_device_catalog",
+            return_value=False,
+        ),
+        patch.object(
+            hass.config_entries, "async_reload", return_value=True,
+        ) as reload_mock,
+        pytest.raises(HomeAssistantError),
+    ):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": REFRESH_DEFS_ENTITY}, blocking=True,
+        )
+
+    reload_mock.assert_not_awaited()
+
+
+async def test_refresh_definitions_partial_success_still_reloads(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Params fetch down but catalog updated → apply what we got."""
+    entry = await _setup(hass, mock_config_entry)
+
+    with (
+        patch(
+            "custom_components.wican.button.async_force_params_refresh",
+            return_value=None,
+        ),
+        patch(
+            "custom_components.wican.button.async_refresh_device_catalog",
+            return_value=True,
+        ),
+        patch.object(
+            hass.config_entries, "async_reload", return_value=True,
+        ) as reload_mock,
+    ):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": REFRESH_DEFS_ENTITY}, blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    reload_mock.assert_awaited_once_with(entry.entry_id)
+
+
+async def test_refresh_definitions_available_when_device_stale(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_capability_probe: MagicMock,
+) -> None:
+    """A stale device disables control buttons, never the sync button."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    mock_capability_probe.return_value.async_probe.return_value = V6_FULL
+    entry = await _setup(hass, mock_config_entry)
+
+    coordinator = entry.runtime_data.coordinator
+    coordinator._last_push = dt_util.utcnow() - timedelta(hours=6)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(RESTART_ENTITY).state == "unavailable"
+    assert hass.states.get(REFRESH_DEFS_ENTITY).state != "unavailable"
+
+
 async def test_buttons_survive_reload(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,

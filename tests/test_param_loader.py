@@ -407,227 +407,270 @@ class TestParamFileLoading:
         with patch.object(pl, "_get_params_file_path", return_value=bad):
             assert pl._load_params() == {}
 
+
+def _mock_session(
+    status: int = 200,
+    body: bytes = b"{}",
+    headers: dict | None = None,
+):
+    """Build a mocked aiohttp session returning one canned response."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    response = AsyncMock()
+    response.status = status
+    response.headers = headers or {}
+    response.read = AsyncMock(return_value=body)
+    response.release = MagicMock()
+    session = MagicMock()
+    session.get = AsyncMock(return_value=response)
+    return session
+
+
+class TestGitHubParamsFetch:
+    """Tests for the (validated, ETag-aware) GitHub fetch."""
+
     @pytest.mark.asyncio
-    async def test_current_params_hash_missing_file(self, tmp_path) -> None:
-        """Hashing a missing file returns None."""
-        from unittest.mock import patch
-
-        from custom_components.wican import param_loader as pl
-
-        with patch.object(
-            pl, "_get_params_file_path", return_value=tmp_path / "missing.json",
-        ):
-            assert await pl._async_get_current_params_hash() is None
-
-
-class TestGitHubParamsUpdate:
-    """Tests for GitHub params.json update functionality."""
-
-    @pytest.mark.asyncio
-    async def test_fetch_params_from_github_success(self) -> None:
-        """Test successful fetch from GitHub."""
-        from unittest.mock import AsyncMock, MagicMock
+    async def test_fetch_success(self) -> None:
+        """A healthy fetch returns validated params and the ETag."""
         from custom_components.wican.param_loader import async_fetch_params_from_github
 
-        # Mock response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.read = AsyncMock(return_value=b'{"TEST_PARAM": {"description": "Test", "settings": {"unit": "V"}}}')
-        mock_response.release = MagicMock()
+        session = _mock_session(
+            body=b'{"TEST_PARAM": {"description": "Test", "settings": {"unit": "V"}}}',
+            headers={"ETag": 'W/"abc123"'},
+        )
+        result = await async_fetch_params_from_github(session)
 
-        # Mock session
-        mock_session = MagicMock()
-        mock_session.get = AsyncMock(return_value=mock_response)
-
-        params, content_hash = await async_fetch_params_from_github(mock_session)
-
-        assert params is not None
-        assert "TEST_PARAM" in params
-        assert params["TEST_PARAM"]["settings"]["unit"] == "V"
-        assert content_hash is not None
+        assert result.ok and not result.unchanged
+        assert result.data["TEST_PARAM"]["settings"]["unit"] == "V"
+        assert result.etag == 'W/"abc123"'
 
     @pytest.mark.asyncio
-    async def test_fetch_params_from_github_http_error(self) -> None:
-        """Test handling of HTTP error from GitHub."""
-        from unittest.mock import AsyncMock, MagicMock
+    async def test_fetch_not_modified(self) -> None:
+        """HTTP 304 reports unchanged and keeps the cached ETag."""
         from custom_components.wican.param_loader import async_fetch_params_from_github
 
-        # Mock 404 response
-        mock_response = AsyncMock()
-        mock_response.status = 404
-        mock_response.release = MagicMock()
+        session = _mock_session(status=304)
+        result = await async_fetch_params_from_github(session, etag='W/"old"')
 
-        mock_session = MagicMock()
-        mock_session.get = AsyncMock(return_value=mock_response)
-
-        params, content_hash = await async_fetch_params_from_github(mock_session)
-
-        assert params is None
-        assert content_hash is None
+        assert result.ok and result.unchanged
+        assert result.etag == 'W/"old"'
+        # The conditional header was sent.
+        assert session.get.call_args.kwargs["headers"] == {"If-None-Match": 'W/"old"'}
 
     @pytest.mark.asyncio
-    async def test_fetch_params_from_github_invalid_json(self) -> None:
-        """Test handling of invalid JSON from GitHub."""
-        from unittest.mock import AsyncMock, MagicMock
+    async def test_fetch_http_error(self) -> None:
+        """HTTP errors report a failed fetch."""
         from custom_components.wican.param_loader import async_fetch_params_from_github
 
-        # Mock response with invalid JSON
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.read = AsyncMock(return_value=b'invalid json {{{')
-        mock_response.release = MagicMock()
-
-        mock_session = MagicMock()
-        mock_session.get = AsyncMock(return_value=mock_response)
-
-        params, content_hash = await async_fetch_params_from_github(mock_session)
-
-        assert params is None
-        assert content_hash is None
+        result = await async_fetch_params_from_github(_mock_session(status=404))
+        assert not result.ok
 
     @pytest.mark.asyncio
-    async def test_fetch_params_from_github_timeout(self) -> None:
-        """Test handling of timeout from GitHub."""
+    async def test_fetch_invalid_json(self) -> None:
+        """Garbage bodies report a failed fetch."""
+        from custom_components.wican.param_loader import async_fetch_params_from_github
+
+        result = await async_fetch_params_from_github(
+            _mock_session(body=b"invalid json {{{"),
+        )
+        assert not result.ok
+
+    @pytest.mark.asyncio
+    async def test_fetch_wrong_shape(self) -> None:
+        """A JSON body that is not an object reports a failed fetch."""
+        from custom_components.wican.param_loader import async_fetch_params_from_github
+
+        result = await async_fetch_params_from_github(
+            _mock_session(body=b'["a", "list"]'),
+        )
+        assert not result.ok
+
+    @pytest.mark.asyncio
+    async def test_fetch_timeout(self) -> None:
+        """Timeouts report a failed fetch, never raise."""
         import asyncio
         from unittest.mock import MagicMock
+
         from custom_components.wican.param_loader import async_fetch_params_from_github
 
-        # Mock session that raises timeout
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(side_effect=asyncio.TimeoutError())
+        session = MagicMock()
+        session.get = MagicMock(side_effect=asyncio.TimeoutError())
+        result = await async_fetch_params_from_github(session)
+        assert not result.ok
 
-        params, content_hash = await async_fetch_params_from_github(mock_session)
+    @pytest.mark.asyncio
+    async def test_fetch_oversized_declared(self) -> None:
+        """A giant declared Content-Length is refused before the read."""
+        from custom_components.wican.param_loader import async_fetch_params_from_github
 
-        assert params is None
-        assert content_hash is None
+        session = _mock_session(headers={"Content-Length": str(10**9)})
+        result = await async_fetch_params_from_github(session)
+        assert not result.ok
+
+    @pytest.mark.asyncio
+    async def test_fetch_oversized_body(self) -> None:
+        """A giant undeclared body is refused after the bounded read."""
+        from custom_components.wican.const import PARAMS_MAX_BYTES
+        from custom_components.wican.param_loader import async_fetch_params_from_github
+
+        session = _mock_session(body=b"x" * (PARAMS_MAX_BYTES + 1))
+        result = await async_fetch_params_from_github(session)
+        assert not result.ok
 
     def test_compute_hash_consistency(self) -> None:
-        """Test that hash computation is consistent."""
+        """Hash computation is deterministic and SHA256-shaped."""
         from custom_components.wican.param_loader import _compute_hash
 
         data = b'{"test": "data"}'
-        hash1 = _compute_hash(data)
-        hash2 = _compute_hash(data)
-
-        assert hash1 == hash2
-        assert len(hash1) == 64  # SHA256 hex length
-
-    def test_compute_hash_different_data(self) -> None:
-        """Test that different data produces different hashes."""
-        from custom_components.wican.param_loader import _compute_hash
-
-        hash1 = _compute_hash(b'{"test": "data1"}')
-        hash2 = _compute_hash(b'{"test": "data2"}')
-
-        assert hash1 != hash2
+        assert _compute_hash(data) == _compute_hash(data)
+        assert len(_compute_hash(data)) == 64
 
     def test_reload_params(self) -> None:
-        """Test reload_params reloads from disk."""
-        from custom_components.wican.param_loader import reload_params, get_all_params
+        """reload_params reloads the bundled file."""
+        from custom_components.wican.param_loader import get_all_params, reload_params
 
-        # Just verify it doesn't crash and returns valid data
         reload_params()
         params = get_all_params()
         assert isinstance(params, dict)
-        assert "SOC" in params  # Known param should still exist
+        assert "SOC" in params
 
-class TestUpdateParamsFromGitHub:
-    """Tests for async_update_params_from_github write/update logic."""
+
+class TestValidateRemoteParams:
+    """Bounds on remote params documents (hostile-content hardening)."""
+
+    def test_wrong_shape_rejected(self) -> None:
+        from custom_components.wican.param_loader import _validate_remote_params
+
+        assert _validate_remote_params(["not", "a", "dict"]) is None
+        assert _validate_remote_params("nope") is None
+        assert _validate_remote_params(None) is None
+
+    def test_entry_flood_capped(self) -> None:
+        from custom_components.wican.const import PARAMS_MAX_ENTRIES
+        from custom_components.wican.param_loader import _validate_remote_params
+
+        flood = {f"P{i}": {"description": "x", "settings": {}} for i in range(PARAMS_MAX_ENTRIES * 2)}
+        validated = _validate_remote_params(flood)
+        assert len(validated) == PARAMS_MAX_ENTRIES
+
+    def test_invalid_entries_dropped(self) -> None:
+        from custom_components.wican.param_loader import _validate_remote_params
+
+        raw = {
+            "GOOD": {"description": "ok", "settings": {"unit": "V", "class": "voltage"}},
+            "": {"description": "empty key"},
+            "x" * 500: {"description": "huge key"},
+            "NON_DICT": "not a dict",
+            "WEIRD_SETTINGS": {"description": "d", "settings": {"unit": 42, "huge": "y" * 5000}},
+        }
+        validated = _validate_remote_params(raw)
+        assert set(validated) == {"GOOD", "WEIRD_SETTINGS"}
+        assert validated["GOOD"]["settings"] == {"unit": "V", "class": "voltage"}
+        # Non-string / oversized settings fields are dropped, entry kept.
+        assert validated["WEIRD_SETTINGS"]["settings"] == {}
+
+
+class TestParamsManagerSync:
+    """Storage-backed sync flows (no package-directory writes exist anymore)."""
+
+    @pytest.fixture(autouse=True)
+    def _restore_params(self):
+        """Keep the module-global params table pristine across tests."""
+        from custom_components.wican import param_loader as pl
+
+        saved = dict(pl._PARAMS)
+        yield
+        pl._PARAMS.clear()
+        pl._PARAMS.update(saved)
+
+    @staticmethod
+    def _fetch_result(**kwargs):
+        from custom_components.wican.param_loader import ParamsFetchResult
+
+        return ParamsFetchResult(**kwargs)
 
     @pytest.mark.asyncio
-    async def test_update_returns_false_when_fetch_fails(self) -> None:
-        """No update when GitHub fetch returns no params."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+    async def test_sync_applies_and_persists(self, hass) -> None:
+        """A successful fetch updates memory and lands in .storage."""
+        from unittest.mock import AsyncMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        new_params = {"NEWP": {"description": "New", "settings": {"unit": "V"}}}
+        with patch.object(
+            pl, "async_fetch_params_from_github",
+            AsyncMock(return_value=self._fetch_result(ok=True, data=new_params, etag="e1")),
+        ):
+            assert await pl.async_update_params_from_github(hass) is True
+
+        assert pl._PARAMS == new_params
+        stored = await pl._get_manager(hass)._store.async_load()
+        assert stored["params"] == new_params
+        assert stored["etag"] == "e1"
+
+    @pytest.mark.asyncio
+    async def test_sync_fetch_failure_keeps_current(self, hass) -> None:
+        """A failed fetch changes nothing and reports no update."""
+        from unittest.mock import AsyncMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        before = dict(pl._PARAMS)
+        with patch.object(
+            pl, "async_fetch_params_from_github",
+            AsyncMock(return_value=self._fetch_result(ok=False)),
+        ):
+            assert await pl.async_update_params_from_github(hass) is False
+        assert pl._PARAMS == before
+
+    @pytest.mark.asyncio
+    async def test_sync_dedupes_concurrent_setups(self, hass) -> None:
+        """Back-to-back setup syncs fold into one fetch; force bypasses."""
+        from unittest.mock import AsyncMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        fetch = AsyncMock(return_value=self._fetch_result(ok=True, unchanged=True))
+        with patch.object(pl, "async_fetch_params_from_github", fetch):
+            await pl.async_update_params_from_github(hass)
+            await pl.async_update_params_from_github(hass)  # deduped
+            assert fetch.await_count == 1
+            await pl.async_force_params_refresh(hass)  # user-initiated
+            assert fetch.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_stored_params_apply_when_github_down(self, hass) -> None:
+        """The last fetched copy applies from .storage even offline."""
+        from unittest.mock import AsyncMock, patch
+
+        from custom_components.wican import param_loader as pl
+
+        stored_params = {"STOREDP": {"description": "s", "settings": {"unit": "A"}}}
+        await pl._get_manager(hass)._store.async_save(
+            {"params": stored_params, "etag": "e0", "fetched_at": 0},
+        )
+        with patch.object(
+            pl, "async_fetch_params_from_github",
+            AsyncMock(return_value=self._fetch_result(ok=False)),
+        ):
+            assert await pl.async_update_params_from_github(hass) is False
+
+        assert pl._PARAMS == stored_params
+
+    @pytest.mark.asyncio
+    async def test_force_refresh_reports_failure(self, hass) -> None:
+        """The button path distinguishes failure (None) from no-change."""
+        from unittest.mock import AsyncMock, patch
 
         from custom_components.wican import param_loader as pl
 
         with patch.object(
             pl, "async_fetch_params_from_github",
-            AsyncMock(return_value=(None, None)),
+            AsyncMock(return_value=self._fetch_result(ok=False)),
         ):
-            assert await pl.async_update_params_from_github(MagicMock()) is False
-
-    @pytest.mark.asyncio
-    async def test_update_returns_false_when_hash_unchanged(self) -> None:
-        """No update when the fetched hash matches the current hash."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from custom_components.wican import param_loader as pl
-
-        with (
-            patch.object(
-                pl, "_async_get_current_params_hash",
-                AsyncMock(return_value="samehash"),
-            ),
-            patch.object(
-                pl, "async_fetch_params_from_github",
-                AsyncMock(return_value=({"X": {}}, "samehash")),
-            ),
+            assert await pl.async_force_params_refresh(hass) is None
+        with patch.object(
+            pl, "async_fetch_params_from_github",
+            AsyncMock(return_value=self._fetch_result(ok=True, unchanged=True)),
         ):
-            assert await pl.async_update_params_from_github(MagicMock()) is False
-
-    @pytest.mark.asyncio
-    async def test_update_writes_new_params(self, tmp_path) -> None:
-        """A changed hash writes the new params and updates memory."""
-        import json
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from custom_components.wican import param_loader as pl
-
-        target = tmp_path / "params.json"
-        new_params = {"NEWP": {"description": "New", "settings": {"unit": "V"}}}
-        saved = dict(pl._PARAMS)
-        try:
-            with (
-                patch.object(
-                    pl, "_async_get_current_params_hash",
-                    AsyncMock(return_value="oldhash"),
-                ),
-                patch.object(
-                    pl, "async_fetch_params_from_github",
-                    AsyncMock(return_value=(new_params, "newhash")),
-                ),
-                patch.object(pl, "_get_params_file_path", return_value=target),
-            ):
-                result = await pl.async_update_params_from_github(MagicMock())
-
-            assert result is True
-            assert json.loads(target.read_text(encoding="utf-8")) == new_params
-            assert pl._PARAMS == new_params
-        finally:
-            # Restore the module-level params so other tests are unaffected.
-            pl._PARAMS.clear()
-            pl._PARAMS.update(saved)
-
-    @pytest.mark.asyncio
-    async def test_update_handles_write_error(self, tmp_path) -> None:
-        """A write failure returns False and leaves memory untouched."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from custom_components.wican import param_loader as pl
-
-        new_params = {"NEWP": {"description": "New", "settings": {"unit": "V"}}}
-        saved = dict(pl._PARAMS)
-        try:
-            with (
-                patch.object(
-                    pl, "_async_get_current_params_hash",
-                    AsyncMock(return_value="oldhash"),
-                ),
-                patch.object(
-                    pl, "async_fetch_params_from_github",
-                    AsyncMock(return_value=(new_params, "newhash")),
-                ),
-                patch.object(pl, "_get_params_file_path", return_value=tmp_path / "p.json"),
-                patch(
-                    "custom_components.wican.param_loader.asyncio.to_thread",
-                    AsyncMock(side_effect=OSError("disk full")),
-                ),
-            ):
-                result = await pl.async_update_params_from_github(MagicMock())
-
-            assert result is False
-            assert pl._PARAMS == saved
-        finally:
-            pl._PARAMS.clear()
-            pl._PARAMS.update(saved)
+            assert await pl.async_force_params_refresh(hass) is False

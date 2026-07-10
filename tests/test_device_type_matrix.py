@@ -412,6 +412,22 @@ async def test_firmware_flapping_probes_coalesce(
     assert float(battery.state) == 12.4
 
 
+@pytest.mark.parametrize(
+    "preset",
+    ["wican_legacy", "wican_pro_v6", "wican_usb_v6", "espnetlink", "meatpi_generic"],
+)
+async def test_refresh_definitions_button_on_every_device_type(
+    hass: HomeAssistant,
+    hass_client: Any,
+    aioclient_mock: Any,
+    preset: str,
+) -> None:
+    """Every MeatPi device type gets the refresh-definitions button."""
+    sim = await _sim(hass, hass_client, aioclient_mock, preset)
+    prefix = _entity_prefix(sim)
+    assert hass.states.get(f"button.{prefix}_refresh_definitions") is not None
+
+
 async def test_two_device_types_are_isolated(
     hass: HomeAssistant, hass_client: Any, aioclient_mock: Any,
 ) -> None:

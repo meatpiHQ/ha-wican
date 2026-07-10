@@ -432,12 +432,11 @@ async def async_setup_entry(  # noqa: C901, PLR0915
     entry: WiCANConfigEntry,
 ) -> bool:
     """Set up WiCAN from a config entry."""
-    # Update params.json from GitHub (non-blocking, best-effort)
+    # Sync PID parameter definitions (stored copy applies immediately; a
+    # coalesced, ETag-cheap GitHub fetch keeps the reload-to-refresh
+    # support flow instant). Best-effort: bundled/stored copy on failure.
     try:
-        session = async_get_clientsession(hass)
-        updated = await async_update_params_from_github(session)
-        if updated:
-            _LOGGER.info("Updated PID parameter definitions from GitHub")
+        await async_update_params_from_github(hass)
     except Exception as err:
         _LOGGER.debug("Could not update params from GitHub: %s", err)
         # Continue with bundled/cached version

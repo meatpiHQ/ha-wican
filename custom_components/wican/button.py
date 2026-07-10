@@ -19,9 +19,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
+from .catalog import async_refresh_device_catalog
 from .const import DOMAIN, SIGNAL_CAPABILITIES_UPDATED
 from .entity import WiCANEntity
 from .exceptions import MeatPiApiError
+from .param_loader import async_force_params_refresh
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -63,12 +65,31 @@ BUTTON_DESCRIPTIONS: tuple[MeatPiButtonEntityDescription, ...] = (
 )
 
 
+REFRESH_DEFINITIONS_DESCRIPTION = ButtonEntityDescription(
+    key="refresh_definitions",
+    translation_key="refresh_definitions",
+    entity_category=EntityCategory.CONFIG,
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: WiCANConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up MeatPi control buttons for capabilities as they are discovered."""
+    # The refresh-definitions button exists on every device (it talks
+    # to GitHub, not to the device, so no capability gating applies).
+    # Guarded like everything else against unload races.
+    if getattr(config_entry, "runtime_data", None) is not None:
+        async_add_entities(
+            [
+                WiCANRefreshDefinitionsButton(
+                    config_entry, REFRESH_DEFINITIONS_DESCRIPTION,
+                ),
+            ],
+        )
+
     added_keys: set[str] = set()
 
     @callback
@@ -108,6 +129,52 @@ async def async_setup_entry(
             _async_add_supported_buttons,
         ),
     )
+
+
+class WiCANRefreshDefinitionsButton(WiCANEntity, ButtonEntity):
+    """Refresh PID parameter definitions and the device catalog from GitHub.
+
+    The one-click support flow: "your parameter was merged — press
+    Refresh integration definitions". Fetches the latest params.json
+    (bypassing the setup dedupe window) and the device catalog, then
+    reloads the config entry so refreshed definitions apply to existing
+    entities. Named to make clear it refreshes downloaded definition
+    data — it does not synchronize or touch the device itself.
+    """
+
+    __slots__ = ()
+
+    @property
+    def available(self) -> bool:
+        """The refresh talks to GitHub, not the device: always available."""
+        return True
+
+    @callback
+    def _async_handle_event(self, webhook_id: str, data: dict[str, str]) -> None:
+        """Handle webhook event (this button carries no push state)."""
+
+    async def async_press(self) -> None:
+        """Fetch fresh definitions and reload the entry to apply them."""
+        params_result = await async_force_params_refresh(self.hass)
+        catalog_updated = await async_refresh_device_catalog(self.hass)
+        if params_result is None and not catalog_updated:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="definitions_refresh_failed",
+            )
+        _LOGGER.info(
+            "Definitions refresh: parameters %s, catalog %s; reloading %s",
+            {True: "updated", False: "up to date", None: "fetch failed"}[
+                params_result
+            ],
+            "updated" if catalog_updated else "unchanged",
+            self.config_entry.title,
+        )
+        # Reload out-of-band: awaiting our own entry's reload from inside
+        # one of its entities would deadlock on the unload.
+        self.hass.async_create_task(
+            self.hass.config_entries.async_reload(self.config_entry.entry_id),
+        )
 
 
 class WiCANButtonEntity(WiCANEntity, ButtonEntity):

@@ -57,6 +57,7 @@ WiCAN adapter with the following entities:
 | `device_tracker` | Location | GPS location of the device/vehicle, where GPS data is available. |
 | `update` | Firmware | Shows available WiCAN firmware from GitHub and installs it over the air. |
 | `button` | Restart, Sync time | Control buttons backed by the device HTTP API. Created automatically on firmware V6+ devices (Sync time requires the RTC component); not shown on older firmware. |
+| `button` | Refresh integration definitions | On every device: downloads the latest PID parameter definitions and device catalog from GitHub, then reloads the integration to apply them. Use it when a newly added parameter should show up immediately. It refreshes downloaded definition data only — it does not communicate with the device. |
 
 Dynamic PID sensors are named from the raw OBD-II keys provided by the device,
 because those keys are only known at runtime (see

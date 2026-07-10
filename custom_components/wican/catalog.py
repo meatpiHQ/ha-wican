@@ -24,7 +24,7 @@ import logging
 from pathlib import Path
 import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
@@ -300,13 +300,29 @@ class _CatalogManager:
         return True
 
 
+def _get_manager(hass: HomeAssistant) -> _CatalogManager:
+    manager = hass.data.get(_HASS_DATA_KEY)
+    if manager is None:
+        manager = _CatalogManager(hass)
+        hass.data[_HASS_DATA_KEY] = manager
+    return cast("_CatalogManager", manager)
+
+
 async def async_setup_catalog(hass: HomeAssistant) -> None:
     """Load and apply the device catalog (idempotent, never raises)."""
     try:
-        manager = hass.data.get(_HASS_DATA_KEY)
-        if manager is None:
-            manager = _CatalogManager(hass)
-            hass.data[_HASS_DATA_KEY] = manager
-        await manager.async_ensure_loaded()
+        await _get_manager(hass).async_ensure_loaded()
     except Exception:  # Defensive: the catalog must never break setup.
         _LOGGER.exception("Unexpected error setting up the device catalog")
+
+
+async def async_refresh_device_catalog(hass: HomeAssistant) -> bool:
+    """User-initiated catalog refresh (the Sync-definitions button).
+
+    Returns True when a fetched catalog was applied. Never raises.
+    """
+    try:
+        return await _get_manager(hass).async_refresh()
+    except Exception:  # Defensive: a refresh must never break the caller.
+        _LOGGER.exception("Unexpected error refreshing the device catalog")
+        return False

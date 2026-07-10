@@ -338,6 +338,40 @@ location history cannot be backfilled.
   "solarpi" product defined **only** in the catalog gets its model,
   inference, and working product sensors through the device simulator.
 
+### Phase 10 — params.json relocation + the "Refresh integration definitions" button
+(added 2026-07-10, same day, on request)
+
+The params.json runtime updater used to write the fetched copy **into
+the integration package directory** on every entry setup — dirtying dev
+checkouts, failing on read-only installs, fetching once per entry with
+no validation. Reworked:
+
+- **Storage-backed**: fetched copies persist in `.storage`
+  (`wican.params`) and apply before any fetch, so the last known
+  definitions work offline; the bundled `data/params.json` stays in git
+  as the shipping fallback and is now strictly read-only at runtime.
+- **Fetch policy preserves the support flow**: still fetches on every
+  entry setup/reload ("your parameter was merged — reload the
+  integration" stays instant), but concurrent setups fold into one
+  fetch (30 s dedupe window) and **ETag conditional requests** make
+  unchanged checks a body-less 304.
+- **Validated and bounded** like the catalog: 1 MiB size cap, 5000-entry
+  cap, key/field length caps, invalid entries dropped individually,
+  structurally invalid documents rejected wholesale.
+- **"Refresh integration definitions" button** on **every** device (all device types,
+  including legacy firmware — it talks to GitHub, not the device, and
+  stays available while the device is asleep): force-fetches params
+  *and* the device catalog, then reloads the config entry so refreshed
+  definitions apply to existing entities. One-click replacement for the
+  "reload the integration" support instruction (named "refresh", not
+  "sync", so users don't read it as device synchronization). Raises a translated
+  error only when both fetches fail.
+- Tests: params fetch/validation/manager suites rewritten (ETag/304,
+  dedupe-vs-force, storage-first offline apply, hostile documents),
+  button flows (press/partial/total failure/stale-device availability),
+  and a matrix parametrization proving the button exists on every
+  device type.
+
 ## 5. What explicitly did NOT change (backward compatibility)
 
 - Webhook payload handling, identity validation, sanitization,

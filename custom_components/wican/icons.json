@@ -25,6 +25,9 @@
     "button": {
       "sync_time": {
         "default": "mdi:clock-check-outline"
+      },
+      "refresh_definitions": {
+        "default": "mdi:database-sync"
       }
     }
   }
