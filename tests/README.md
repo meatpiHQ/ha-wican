@@ -1,6 +1,23 @@
-# WiCAN Integration Tests
+# MeatPi Integration Tests
 
-Comprehensive test suite for the WiCAN Home Assistant integration.
+Comprehensive test suite for the MeatPi (WiCAN) Home Assistant integration.
+
+Key building blocks:
+
+- `device_sim.py` — the multi-device-type simulator: `DEVICE_PRESETS`
+  (legacy WiCAN, V6 WiCAN Pro/USB, ESPNetlink, generic MeatPi) plus
+  `SimulatedDeviceApi`, the device-side HTTP surface with programmable
+  failure modes (offline/timeout/403/500/garbage) and data-logger routes.
+- `test_device_type_matrix.py` — per-device-type end-to-end scenarios
+  (telemetry, control buttons, OTA lifecycle, failure injection).
+- `test_history*.py` — the SD-card history backfill: unit, end-to-end,
+  hardening, and real in-memory-recorder round-trips.
+- `test_device_simulation.py` / `test_device_chaos.py` /
+  `test_hardening.py` — the hardened-telemetry and failure-injection
+  suites.
+
+Adding a new device type? Follow `notes/ADDING_A_DEVICE.md` (Part B.5
+lists the required test coverage).
 
 ## Prerequisites
 

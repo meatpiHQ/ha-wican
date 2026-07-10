@@ -17,5 +17,4 @@ bruno/
 # Coverage artifacts
 .coverage
 
-# Local scratch / working notes (not tracked)
-notes/
+# Project documentation lives in notes/ (tracked; see notes/README.md)
