@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 import logging
 from math import isfinite
@@ -17,6 +18,7 @@ from homeassistant.components.sensor.const import NON_NUMERIC_DEVICE_CLASSES
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.util import dt as dt_util
 
 from .attributes import SENSOR_DESCRIPTIONS, WiCANSensorEntityDescription, get_sensor_attributes
 from .const import (
@@ -367,8 +369,11 @@ async def async_setup_entry(  # noqa: C901
     """Set up the sensor platform."""
 
     async_add_entities(
-        WiCANSensorEntity(config_entry, description)
-        for description in SENSOR_DESCRIPTIONS
+        [
+            WiCANSensorEntity(config_entry, description)
+            for description in SENSOR_DESCRIPTIONS
+        ]
+        + [WiCANLastSeenSensorEntity(config_entry)],
     )
 
     # Product-specific sensors declared by the device catalog (keys into
@@ -497,10 +502,13 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
         key = self.entity_description.key
         data = self.coordinator.data or {}
         status = data.get("status", {})
-        if not isinstance(status, dict):
-            return
-
-        if key not in status:
+        if not isinstance(status, dict) or key not in status:
+            # Partial pushes are normal: keep the last value. But the
+            # state must still be written, or an availability flip (the
+            # staleness health-check failing or recovering) would never
+            # render and this entity would keep showing its old value as
+            # available while every sibling goes unavailable.
+            self.async_write_ha_state()
             return
 
         # Get raw value and normalize it
@@ -532,6 +540,58 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
             )
 
         await super().async_added_to_hass()
+
+
+class WiCANLastSeenSensorEntity(WiCANEntity, RestoreSensor):
+    """When the device last pushed data.
+
+    Deliberately stays available while the device is stale: its purpose
+    is telling the user how old the (now unavailable) readings are while
+    the car is parked or the device is asleep. The value survives
+    restarts via restore, so "last seen yesterday" is not lost with HA
+    downtime.
+    """
+
+    def __init__(self, config_entry: WiCANConfigEntry) -> None:
+        super().__init__(
+            config_entry,
+            WiCANSensorEntityDescription(
+                key="last_seen",
+                name="Last seen",
+                device_class=SensorDeviceClass.TIMESTAMP,
+                entity_category=EntityCategory.DIAGNOSTIC,
+            ),
+        )
+        self._attr_native_value: datetime | None = None
+
+    @property
+    def available(self) -> bool:
+        """Stay available through staleness — that is the entity's point."""
+        return True
+
+    def _handle_coordinator_update(self) -> None:
+        """Track the coordinator's push timestamp."""
+        last_push = self.coordinator.last_push
+        if last_push is not None:
+            self._attr_native_value = last_push
+        # Written unconditionally so health-check notifications render too.
+        self.async_write_ha_state()
+
+    @callback
+    def _async_handle_event(self, webhook_id: str, data: dict[str, str]) -> None:
+        """Handle webhook event (backward compatibility)."""
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last-seen timestamp across restarts."""
+        state = await self.async_get_last_sensor_data()
+        if state and state.native_value is not None:
+            value: Any = state.native_value
+            if isinstance(value, str):
+                value = dt_util.parse_datetime(value)
+            if isinstance(value, datetime):
+                self._attr_native_value = value
+        await super().async_added_to_hass()
+
 
 class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
     """Dynamic PID sensor entity."""
@@ -600,12 +660,13 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
         """Handle updated data from the coordinator."""
         data = self.coordinator.data or {}
         pid_data = data.get("autopid_data", {})
-        if not isinstance(pid_data, dict):
-            return
-
-        if self._pid_key in pid_data:
+        if isinstance(pid_data, dict) and self._pid_key in pid_data:
             self._attr_native_value = self._usable_value(pid_data[self._pid_key])
-            self.async_write_ha_state()
+        # Always write, even when this PID is absent from the push (the
+        # vehicle may have stopped reporting it): availability flips from
+        # the staleness health-check must render on restored PID sensors
+        # too, not leave them frozen on a stale value.
+        self.async_write_ha_state()
 
     @callback
     def _async_handle_event(self, webhook_id: str, data: dict[str, str]) -> None:

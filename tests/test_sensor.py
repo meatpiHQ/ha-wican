@@ -299,3 +299,150 @@ async def test_sensor_state_restoration_with_normalization(hass: HomeAssistant) 
 
 
 
+
+
+async def test_missing_key_sensor_goes_unavailable_when_stale(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_webhook_data: dict,
+    hass_client,
+) -> None:
+    """A sensor absent from recent pushes still renders staleness flips.
+
+    Regression: sensors whose key was missing from the payload skipped
+    async_write_ha_state() on coordinator notifications, so when the
+    device went stale they kept showing their last value as available
+    while every sibling entity went unavailable.
+    """
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    entry = init_integration
+    client = await hass_client()
+
+    # Full push: batt_voltage gets a value.
+    await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=mock_webhook_data,
+    )
+    await hass.async_block_till_done()
+    live_state = hass.states.get("sensor.wican_device_batt_voltage").state
+    assert live_state not in ("unknown", "unavailable")
+
+    # Partial push replaces "status" without batt_voltage: the sensor
+    # keeps its last value (partial pushes are normal).
+    await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}",
+        json={"status": {"device_id": "test_device_123", "uptime": "01:00:05"}},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.wican_device_batt_voltage").state == live_state
+
+    # Device goes silent past the staleness window: the sensor must flip
+    # to unavailable together with its siblings.
+    coordinator = entry.runtime_data.coordinator
+    coordinator._last_push = dt_util.utcnow() - timedelta(hours=3)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert (
+        hass.states.get("sensor.wican_device_batt_voltage").state == "unavailable"
+    )
+    assert hass.states.get("sensor.wican_device_uptime").state == "unavailable"
+
+    # A fresh push recovers it.
+    await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=mock_webhook_data,
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.wican_device_batt_voltage").state == live_state
+
+
+async def test_missing_pid_sensor_goes_unavailable_when_stale(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_client,
+) -> None:
+    """A PID the vehicle stopped reporting still renders staleness flips."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    entry = init_integration
+    client = await hass_client()
+    identity = {"device_id": "test_device_123", "uptime": "01:00:00"}
+
+    # A push carrying a PID creates its sensor; the entity picks up the
+    # value on the next coordinator notification, so push twice.
+    for _ in range(2):
+        await client.post(
+            f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}",
+            json={"status": identity, "autopid_data": {"RPM": 900}, "config": {}},
+        )
+        await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_pid_RPM",
+    )
+    assert entity_id is not None
+    assert hass.states.get(entity_id).state == "900"
+
+    # Later pushes no longer carry the PID; the value is kept.
+    await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}",
+        json={"status": identity},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id).state == "900"
+
+    # Stale device: the orphaned PID sensor must go unavailable too.
+    coordinator = entry.runtime_data.coordinator
+    coordinator._last_push = dt_util.utcnow() - timedelta(hours=3)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id).state == "unavailable"
+
+
+async def test_last_seen_sensor_tracks_pushes_and_survives_staleness(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_webhook_data: dict,
+    hass_client,
+) -> None:
+    """Last seen shows the latest push time and stays available when stale."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    entry = init_integration
+
+    # No push yet: the sensor exists, available, with no value.
+    state = hass.states.get("sensor.wican_device_last_seen")
+    assert state is not None
+    assert state.state == "unknown"
+
+    client = await hass_client()
+    before = dt_util.utcnow()
+    await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=mock_webhook_data,
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.wican_device_last_seen")
+    seen = dt_util.parse_datetime(state.state)
+    assert seen is not None
+    # The state renders at second precision; allow for the truncation.
+    assert before - timedelta(seconds=1) <= seen <= dt_util.utcnow()
+
+    # Stale device: siblings go unavailable, Last seen keeps its
+    # timestamp — its whole purpose is dating the stale readings.
+    coordinator = entry.runtime_data.coordinator
+    coordinator._last_push = seen - timedelta(hours=3)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert (
+        hass.states.get("sensor.wican_device_batt_voltage").state == "unavailable"
+    )
+    last_seen_state = hass.states.get("sensor.wican_device_last_seen")
+    assert last_seen_state.state != "unavailable"
+    assert dt_util.parse_datetime(last_seen_state.state) is not None

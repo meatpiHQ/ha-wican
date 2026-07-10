@@ -59,6 +59,11 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=config_entry,
         )
 
+    @property
+    def last_push(self) -> datetime | None:
+        """When the device last pushed data (None before the first push)."""
+        return self._last_push
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Health-check the push-based device.
 
