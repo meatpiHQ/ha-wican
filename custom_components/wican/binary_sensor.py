@@ -24,7 +24,8 @@ PARALLEL_UPDATES = 0
 
 TRUE_STRINGS = {"enable", "true", "online"}
 
-def is_true_status(value: str) -> bool:
+def is_true_status(value: Any) -> bool:
+    """Interpret the device's truthy strings/scalars as a boolean."""
     if isinstance(value, str):
         return value.strip().lower() in TRUE_STRINGS
     return bool(value)
@@ -67,7 +68,9 @@ class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):
             status = {}
 
         # If key not present, don't change state. Availability handled below.
-        if key in status:
+        # A non-scalar value (nested object/array from a glitching device)
+        # says nothing about on/off, so keep the last known state.
+        if key in status and isinstance(status[key], (str, bool, int, float)):
             self._attr_is_on = is_true_status(status[key])
             self._attr_extra_state_attributes = get_sensor_attributes(
                 self.entity_description, data,

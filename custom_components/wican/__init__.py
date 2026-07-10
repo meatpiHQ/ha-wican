@@ -7,7 +7,7 @@ from http import HTTPStatus
 import logging
 import re
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from aiohttp import ClientError, ClientResponseError
@@ -15,6 +15,7 @@ from aiohttp.web import Request, Response
 from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_WEBHOOK_ID, EVENT_HOMEASSISTANT_STARTED, Platform
+from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -27,6 +28,7 @@ from .const import (
     DEFAULT_POST_INTERVAL,
     DOMAIN,
     IP_CACHE_DURATION,
+    MAX_DEVICE_INFO_FIELD_LENGTH,
     PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
     WEBHOOK_MAX_RETRIES,
     WEBHOOK_REGISTRATION_TIMEOUT,
@@ -61,7 +63,8 @@ class _WebhookEndpointsFailedError(WiCANWebhookError):
 
 def _parse_version(version: str | None) -> tuple[int, ...] | None:
     """Parse a version string like v4.49 into a comparable tuple."""
-    if not version:
+    # Legacy entries may hold a non-string here; treat it as unknown.
+    if not version or not isinstance(version, str):
         return None
 
     parts = re.findall(r"\d+", version)
@@ -164,6 +167,40 @@ def _build_webhook_endpoint(base: str | None) -> URL | None:
     return url / "api" / "webhook"
 
 
+# Device-reported fields that are persisted into the config entry. Order in
+# the payload: nested "status" wins over a top-level key, matching identity
+# validation precedence.
+_DEVICE_INFO_KEYS = (
+    "fw_version",
+    "hw_version",
+    "device_id",
+    "git_version",
+    "mdns",
+    "host",
+    "ip",
+)
+
+
+def _sanitize_device_field(value: object) -> str | None:
+    """Return a safe string form of a device-reported info field, or None.
+
+    These values end up in the config entry (written to disk) and later flow
+    into version parsing, URL building, and the device registry — all of which
+    assume strings. A glitching or hostile device must not be able to persist
+    anything else.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        value = str(value)
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or len(value) > MAX_DEVICE_INFO_FIELD_LENGTH:
+        return None
+    return value
+
+
 def _normalize_ip(ip: str | None) -> str | None:
     """Normalize IPv4-mapped IPv6 strings into IPv4 when possible."""
     if not ip:
@@ -191,6 +228,90 @@ def _extract_request_ip(request: Request) -> str | None:
         return _normalize_ip(request.remote)
 
     return None
+
+
+def _collect_device_reported_fields(data: dict[str, Any]) -> dict[str, str]:
+    """Extract sanitized device info fields from a webhook payload.
+
+    Fields come from the nested "status" object or the top level; only
+    bounded, non-empty strings are kept (a glitching device may send nested
+    objects or numbers here) so nothing unusable ever reaches the config
+    entry, version parsing, or URL building.
+    """
+    fields: dict[str, str] = {}
+    status = data.get("status")
+    if not isinstance(status, dict):
+        status = {}
+    for key in _DEVICE_INFO_KEYS:
+        if key in status:
+            raw_field = status[key]
+        elif key in data:
+            raw_field = data[key]
+        else:
+            continue
+        field_value = _sanitize_device_field(raw_field)
+        if field_value is None:
+            if raw_field not in (None, ""):
+                _LOGGER.debug(
+                    "Ignoring unusable device-reported %s: %r", key, raw_field,
+                )
+            continue
+        fields[key] = field_value
+    return fields
+
+
+def _persist_device_reported_info(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    data: dict[str, Any],
+    request: Request,
+) -> None:
+    """Persist device-reported info in the config entry and react to changes."""
+    device_info_fields = _collect_device_reported_fields(data)
+
+    # Capture device IP from the inbound request as an authoritative source
+    remote_ip = _extract_request_ip(request)
+    if remote_ip:
+        entry.runtime_data.device_ip = remote_ip
+        device_info_fields["ip"] = remote_ip
+        # Don't set host from IP if we already have a hostname
+        # (avoid triggering re-registration when IP resolves to stored hostname)
+        host_from_ip = _http_url_from_host(remote_ip)
+        if host_from_ip and not entry.data.get("host"):
+            entry.runtime_data.device_host = host_from_ip
+            device_info_fields["host"] = host_from_ip
+
+    if not device_info_fields:
+        return
+
+    new_data = dict(entry.data)
+    connection_field_changed = False
+    data_changed = False
+    for key, value in device_info_fields.items():
+        # Skip if value hasn't actually changed
+        if new_data.get(key) == value:
+            continue
+        new_data[key] = value
+        data_changed = True
+        # Only mark as connection change if host/ip/mdns actually changed
+        if key in {"host", "ip", "mdns"}:
+            connection_field_changed = True
+
+    if not data_changed:
+        return
+
+    hass.config_entries.async_update_entry(entry, data=new_data)
+    if connection_field_changed:
+        entry.runtime_data.device_host = new_data.get("host") or entry.runtime_data.device_host
+        entry.runtime_data.device_ip = new_data.get("ip") or entry.runtime_data.device_ip
+        # Refresh registration out-of-band so future retries use the new address
+        _LOGGER.info(
+            "Connection info changed for %s, re-registering webhook",
+            entry.title,
+        )
+        hass.async_create_task(
+            _async_request_webhook_registration(hass, entry),
+        )
 
 
 def _webhook_repair_issue_id(entry: WiCANConfigEntry) -> str:
@@ -296,7 +417,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         )
         # Don't fail setup - entities will update when first webhook arrives
 
-    async def handle_webhook(  # noqa: C901, PLR0912
+    async def handle_webhook(
         hass: HomeAssistant,
         webhook_id: str,
         request: Request,
@@ -344,59 +465,8 @@ async def async_setup_entry(  # noqa: C901, PLR0915
                 status=HTTPStatus.FORBIDDEN,
             )
 
-        # Extract device info fields from top-level or nested "status"
-        device_info_fields = {}
-        status = data.get("status")
-        if not isinstance(status, dict):
-            status = {}
-        for key in ("fw_version", "hw_version", "device_id", "git_version", "mdns", "host", "ip"):
-            # Check top-level first, then status
-            if key in status:
-                device_info_fields[key] = status[key]
-
-        # Capture device IP from the inbound request as an authoritative source
-        remote_ip = _extract_request_ip(request)
-        if remote_ip:
-            entry.runtime_data.device_ip = remote_ip
-            device_info_fields["ip"] = remote_ip
-            # Don't set host from IP if we already have a hostname
-            # (avoid triggering re-registration when IP resolves to stored hostname)
-            host_from_ip = _http_url_from_host(remote_ip)
-            if host_from_ip and not entry.data.get("host"):
-                entry.runtime_data.device_host = host_from_ip
-                device_info_fields["host"] = host_from_ip
-
-        # Persist device info in config entry
-        if device_info_fields:
-            new_data = dict(entry.data)
-            connection_field_changed = False
-            data_changed = False
-            for key, value in device_info_fields.items():
-                if value is None or value == "":
-                    # Skip empty values - don't overwrite with empty
-                    continue
-                # Skip if value hasn't actually changed
-                if new_data.get(key) == value:
-                    continue
-                new_data[key] = value
-                data_changed = True
-                # Only mark as connection change if host/ip/mdns actually changed
-                if key in {"host", "ip", "mdns"}:
-                    connection_field_changed = True
-
-            if data_changed:
-                hass.config_entries.async_update_entry(entry, data=new_data)
-                if connection_field_changed:
-                    entry.runtime_data.device_host = new_data.get("host") or entry.runtime_data.device_host
-                    entry.runtime_data.device_ip = new_data.get("ip") or entry.runtime_data.device_ip
-                    # Refresh registration out-of-band so future retries use the new address
-                    _LOGGER.info(
-                        "Connection info changed for %s, re-registering webhook",
-                        entry.title,
-                    )
-                    hass.async_create_task(
-                        _async_register_webhook_on_device(hass, entry),
-                    )
+        # Persist any device-reported info (fw/hw versions, connection data).
+        _persist_device_reported_info(hass, entry, data, request)
 
         # Keep dispatcher for backward compatibility during migration
         async_dispatcher_send(hass, DOMAIN, webhook_id, data)
@@ -458,13 +528,56 @@ def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> 
 
 
 def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
-    async def _register(_: object | None = None) -> None:
-        await _async_register_webhook_on_device(hass, entry)
-
     if hass.is_running:
-        hass.async_create_task(_register())
-    else:
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _register)
+        hass.async_create_task(_async_request_webhook_registration(hass, entry))
+        return
+
+    fired = False
+
+    @callback
+    def _on_started(_: object) -> None:
+        nonlocal fired
+        fired = True
+        hass.async_create_task(_async_request_webhook_registration(hass, entry))
+
+    unsub = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started)
+
+    def _cancel_startup_registration() -> None:
+        # Only unsubscribe if the once-listener has not fired (it removes
+        # itself on fire; removing again would log an error).
+        if not fired:
+            unsub()
+
+    entry.async_on_unload(_cancel_startup_registration)
+
+
+async def _async_request_webhook_registration(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+) -> None:
+    """Register the webhook on the device, coalescing concurrent requests.
+
+    Pushes and option updates can request re-registration faster than one
+    (retried, backed-off) registration attempt completes — for example a
+    device that alternates between two IP addresses. Run a single registration
+    at a time and fold any requests that arrive meanwhile into one trailing
+    re-run, so registration attempts can never pile up against the device.
+    """
+    # The entry may have been unloaded between scheduling and execution;
+    # runtime_data is deleted on unload.
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return
+    runtime.registration_pending = True
+    if runtime.registration_running:
+        return
+    runtime.registration_running = True
+    try:
+        while runtime.registration_pending:
+            runtime.registration_pending = False
+            await _async_register_webhook_on_device(hass, entry)
+    finally:
+        runtime.registration_running = False
 
 
 async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
@@ -698,5 +811,5 @@ async def _async_entry_updated(hass: HomeAssistant, entry: WiCANConfigEntry) -> 
     new_post_interval = entry.options.get(CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL)
     entry.runtime_data.post_interval = new_post_interval
 
-    # Re-register webhook with new interval
-    await _async_register_webhook_on_device(hass, entry)
+    # Re-register webhook with new interval (coalesced with any in-flight run)
+    await _async_request_webhook_registration(hass, entry)

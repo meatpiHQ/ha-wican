@@ -95,10 +95,11 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         data = self.coordinator.data or {}
         status = data.get("status", {})
         fw_version = status.get("fw_version") if isinstance(status, dict) else None
-        if not fw_version:
-            # Fallback to config entry data
-            fw_version = self.config_entry.data.get("fw_version")
-        return self._normalize_version(fw_version)
+        version = self._normalize_version(fw_version)
+        if not version:
+            # Fallback to config entry data (sanitized at webhook time)
+            version = self._normalize_version(self.config_entry.data.get("fw_version"))
+        return version
 
     @property
     def latest_version(self) -> str | None:
@@ -120,6 +121,13 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             "4.13u" -> "4.13"  (USB)
             "4.46"  -> "4.46"  (already normalized)
         """
+        # The device-reported version flows in unvalidated from the webhook
+        # payload; tolerate a firmware that serializes it as a number and
+        # treat anything else as unknown.
+        if isinstance(version, (int, float)) and not isinstance(version, bool):
+            version = str(version)
+        if version is not None and not isinstance(version, str):
+            return None
         if not version:
             return version
         # Remove common suffixes: 'p' (PRO), 'u' (USB)
@@ -240,7 +248,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                 releases = await response.json()
 
             # Determine device type for filtering
-            hw_version = self.config_entry.data.get("hw_version", "").lower()
+            hw_version = str(self.config_entry.data.get("hw_version") or "").lower()
             is_pro = "pro" in hw_version
 
             # Search for matching release
@@ -318,7 +326,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             )
 
         # Determine device type from hardware version
-        hw_version = self.config_entry.data.get("hw_version", "").lower()
+        hw_version = str(self.config_entry.data.get("hw_version") or "").lower()
         is_pro = "pro" in hw_version
         is_usb = "usb" in hw_version
 

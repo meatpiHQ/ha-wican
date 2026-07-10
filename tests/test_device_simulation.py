@@ -16,7 +16,6 @@ always degrades gracefully.
 
 from __future__ import annotations
 
-from datetime import timedelta
 from http import HTTPStatus
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -27,151 +26,11 @@ from aiohttp import ClientError
 from homeassistant.const import CONF_WEBHOOK_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.util import dt as dt_util
 
 from custom_components.wican.const import CONF_POST_INTERVAL, DOMAIN
 
 from tests.conftest import MockConfigEntry
-
-
-class WiCANDeviceSimulator:
-    """Simulate a WiCAN device talking to the integration."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        hass_client_factory: Any,
-        *,
-        title: str = "WiCAN Sim",
-        webhook_id: str = "sim_webhook_id",
-        device_id: str | None = "wican_sim_001",
-        mac: str = "AA:BB:CC:00:11:22",
-        fw_version: str = "v4.49",
-        hw_version: str = "WiCAN-Pro",
-        hostname: str = "wican_sim.local",
-        ip: str = "192.168.1.123",
-    ) -> None:
-        self.hass = hass
-        self._client_factory = hass_client_factory
-        self._client: Any = None
-        self.title = title
-        self.webhook_id = webhook_id
-        self.device_id = device_id
-        self.mac = mac
-        self.fw_version = fw_version
-        self.hw_version = hw_version
-        self.hostname = hostname
-        self.ip = ip
-        self.entry: MockConfigEntry | None = None
-
-    # -- lifecycle -------------------------------------------------------
-
-    async def async_setup(
-        self,
-        *,
-        store_device_id: bool = True,
-        register_result: bool = True,
-        options: dict[str, Any] | None = None,
-    ) -> MockConfigEntry:
-        """Create the config entry and set up the integration."""
-        data: dict[str, Any] = {
-            CONF_WEBHOOK_ID: self.webhook_id,
-            "mdns": f"http://{self.hostname}",
-            "host": f"http://{self.ip}",
-            "mac": self.mac,
-            "fw_version": self.fw_version,
-            "hw_version": self.hw_version,
-        }
-        if store_device_id and self.device_id:
-            data["device_id"] = self.device_id
-
-        self.entry = MockConfigEntry(
-            domain=DOMAIN,
-            title=self.title,
-            data=data,
-            options=options or {CONF_POST_INTERVAL: 15},
-            unique_id=self.mac.replace(":", "").lower(),
-        )
-        self.entry.add_to_hass(self.hass)
-
-        with patch(
-            "custom_components.wican._async_register_webhook_on_device",
-            return_value=register_result,
-        ):
-            assert await self.hass.config_entries.async_setup(self.entry.entry_id)
-            await self.hass.async_block_till_done()
-        return self.entry
-
-    @property
-    def coordinator(self) -> Any:
-        assert self.entry is not None
-        return self.entry.runtime_data.coordinator
-
-    # -- device -> HA push ----------------------------------------------
-
-    async def push(
-        self,
-        payload: Any = None,
-        *,
-        raw: str | bytes | None = None,
-        content_type: str = "application/json",
-    ) -> Any:
-        """POST a webhook payload to HA as the device would."""
-        if self._client is None:
-            self._client = await self._client_factory()
-        url = f"/api/webhook/{self.webhook_id}"
-        if raw is not None:
-            return await self._client.post(
-                url, data=raw, headers={"Content-Type": content_type},
-            )
-        return await self._client.post(url, json=payload)
-
-    async def push_and_settle(self, payload: Any) -> Any:
-        """Push a payload and let all resulting tasks run."""
-        resp = await self.push(payload)
-        await self.hass.async_block_till_done()
-        await self.coordinator.async_refresh()
-        await self.hass.async_block_till_done()
-        return resp
-
-    def go_stale(self) -> None:
-        """Simulate the device having stopped pushing for a long time."""
-        self.coordinator._last_push = dt_util.utcnow() - timedelta(hours=6)
-
-    # -- payload builders -----------------------------------------------
-
-    def status(self, **fields: Any) -> dict[str, Any]:
-        base: dict[str, Any] = {
-            "fw_version": self.fw_version,
-            "hw_version": self.hw_version,
-            "batt_voltage": "12.6V",
-            "wifi_mode": "Station",
-            "vpn_status": "Not Connected",
-            "uptime": "01:23:45",
-            "ecu_status": "online",
-            "obd_chip_status": "ok",
-            "ble_status": "Disabled",
-        }
-        if self.device_id:
-            base["device_id"] = self.device_id
-        base.update(fields)
-        return {"status": base}
-
-    def pids(
-        self,
-        values: dict[str, Any],
-        config: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        return {"autopid_data": values, "config": config or {}}
-
-    def gps(self, lat: float, lon: float, **extra: Any) -> dict[str, Any]:
-        return {"gps": {"latitude": lat, "longitude": lon, **extra}}
-
-
-@pytest.fixture
-async def device(hass: HomeAssistant, hass_client: Any) -> WiCANDeviceSimulator:
-    """Return an unconfigured device simulator."""
-    return WiCANDeviceSimulator(hass, hass_client)
+from tests.device_sim import WiCANDeviceSimulator
 
 
 # ===================================================================
@@ -226,6 +85,10 @@ async def test_empty_object_is_accepted(device: WiCANDeviceSimulator) -> None:
     await device.async_setup()
     resp = await device.push({})
     assert resp.status == HTTPStatus.NO_CONTENT
+    # An empty push still counts as a sign of life for the health check.
+    await device.hass.async_block_till_done()
+    await device.coordinator.async_refresh()
+    assert device.coordinator.last_update_success is True
 
 
 async def test_status_wrong_type_is_ignored(device: WiCANDeviceSimulator) -> None:
@@ -284,9 +147,17 @@ async def test_gps_wrong_types_do_not_crash(device: WiCANDeviceSimulator) -> Non
         {"gps": {"latitude": "abc", "longitude": None, "accuracy": {"x": 1}}},
     )
     assert resp.status == HTTPStatus.NO_CONTENT
+    # No garbage leaked into the tracker: it stays unavailable (no valid fix).
+    state = device.hass.states.get("device_tracker.wican_sim_location")
+    assert state is not None
+    assert state.state == "unavailable"
     # gps as a non-dict entirely:
     resp2 = await device.push_and_settle({"gps": "not-a-dict"})
     assert resp2.status == HTTPStatus.NO_CONTENT
+    # A valid fix afterwards still works.
+    await device.push_and_settle(device.gps(48.1, 11.6, accuracy=5))
+    state = device.hass.states.get("device_tracker.wican_sim_location")
+    assert state.attributes["latitude"] == 48.1
 
 
 async def test_battery_voltage_formats(device: WiCANDeviceSimulator) -> None:
@@ -318,6 +189,10 @@ async def test_hostile_value_types_do_not_crash(device: WiCANDeviceSimulator) ->
         },
     )
     assert resp.status == HTTPStatus.NO_CONTENT
+    # The valid sibling value in the same push was still applied...
+    assert device.hass.states.get("sensor.wican_sim_uptime").state == "12345"
+    # ...while the hostile values were dropped rather than written.
+    assert device.hass.states.get("sensor.wican_sim_batt_voltage").state == "unknown"
 
 
 async def test_unicode_and_special_chars(device: WiCANDeviceSimulator) -> None:

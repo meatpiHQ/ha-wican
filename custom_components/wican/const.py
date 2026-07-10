@@ -50,3 +50,11 @@ WICAN_DATA_UPDATE_INTERVAL = 300  # seconds (5 minutes)
 # data within max(post_interval * DEVICE_STALE_FACTOR, MIN_DEVICE_STALE_SECONDS).
 DEVICE_STALE_FACTOR = 5
 MIN_DEVICE_STALE_SECONDS = 120
+
+# Bounds on device-reported data. A healthy device never exceeds these; a
+# misbehaving one (corrupted memory, hostile caller) must not be able to grow
+# the entity registry or the config entry without limit.
+MAX_DYNAMIC_PID_SENSORS = 1000
+MAX_PID_KEY_LENGTH = 128
+MAX_PID_CONFIG_FIELD_LENGTH = 64
+MAX_DEVICE_INFO_FIELD_LENGTH = 255

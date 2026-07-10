@@ -104,6 +104,18 @@ async def init_integration(
 
 
 @pytest.fixture
+async def device(hass: HomeAssistant, hass_client):
+    """Return an unconfigured simulated WiCAN device.
+
+    Imported lazily to avoid a circular import (device_sim imports
+    MockConfigEntry re-exported by this module).
+    """
+    from tests.device_sim import WiCANDeviceSimulator
+
+    return WiCANDeviceSimulator(hass, hass_client)
+
+
+@pytest.fixture
 def mock_aiohttp_session() -> Generator[MagicMock]:
     """Mock aiohttp session."""
     with patch(

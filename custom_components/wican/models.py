@@ -22,3 +22,6 @@ class WiCANRuntimeData:
     device_ip: str | None = None
     cached_resolved_ip: str | None = None
     cache_timestamp: float = 0.0
+    # Webhook-registration coalescing (see _async_request_webhook_registration)
+    registration_running: bool = False
+    registration_pending: bool = False

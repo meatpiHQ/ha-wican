@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from math import isfinite
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.device_tracker.config_entry import TrackerEntity
@@ -16,7 +17,14 @@ from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, Device
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    GPS_ACCURACY_THRESHOLD,
+    MAX_GPS_LATITUDE,
+    MAX_GPS_LONGITUDE,
+    MIN_GPS_LATITUDE,
+    MIN_GPS_LONGITUDE,
+)
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -27,6 +35,17 @@ _LOGGER = logging.getLogger(__name__)
 
 # Push-based integration; entities are read-only and never poll the device.
 PARALLEL_UPDATES = 0
+
+
+def _as_finite_float(value: Any) -> float | None:
+    """Best-effort float conversion, rejecting bools and non-finite values."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if isfinite(result) else None
 
 
 async def async_setup_entry(
@@ -173,53 +192,66 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
             _LOGGER.debug("No GPS data in coordinator update")
             return
 
-        # Update GPS coordinates
-        latitude = gps_data.get("latitude")
-        longitude = gps_data.get("longitude")
-
-        if latitude is not None and longitude is not None:
-            try:
-                # Validate coordinates are within valid ranges
-                lat = float(latitude)
-                lon = float(longitude)
-
-                if -90 <= lat <= 90 and -180 <= lon <= 180:
-                    self._attr_latitude = lat
-                    self._attr_longitude = lon
-
-                    # Update accuracy (default to 0 if not provided)
-                    accuracy = gps_data.get("accuracy", 0)
-                    self._attr_location_accuracy = int(accuracy) if accuracy else 0
-
-                    # Update optional attributes
-                    self._altitude = gps_data.get("altitude")
-                    if self._altitude is not None:
-                        self._altitude = float(self._altitude)
-
-                    self._speed = gps_data.get("speed")
-                    if self._speed is not None:
-                        self._speed = float(self._speed)
-
-                    self._heading = gps_data.get("heading")
-                    if self._heading is not None:
-                        self._heading = float(self._heading)
-
-                    _LOGGER.debug(
-                        "Updated GPS location: %s, %s (accuracy: %sm)",
-                        self._attr_latitude,
-                        self._attr_longitude,
-                        self._attr_location_accuracy,
-                    )
-                else:
-                    _LOGGER.warning(
-                        "Invalid GPS coordinates: lat=%s, lon=%s (out of range)",
-                        lat,
-                        lon,
-                    )
-            except (ValueError, TypeError) as err:
-                _LOGGER.warning("Failed to parse GPS data: %s", err)
-
+        # Every field is parsed independently so one malformed field can never
+        # take the others (or the whole tracker) down with it.
+        self._apply_gps_fix(gps_data)
         self.async_write_ha_state()
+
+    def _apply_gps_fix(self, gps_data: dict[str, Any]) -> None:
+        """Apply a GPS fix from the device, ignoring anything unusable."""
+        lat = _as_finite_float(gps_data.get("latitude"))
+        lon = _as_finite_float(gps_data.get("longitude"))
+
+        if lat is None or lon is None:
+            if gps_data.get("latitude") is not None or gps_data.get("longitude") is not None:
+                _LOGGER.debug(
+                    "Ignoring GPS fix with unusable coordinates: lat=%r, lon=%r",
+                    gps_data.get("latitude"),
+                    gps_data.get("longitude"),
+                )
+            return
+
+        if not (
+            MIN_GPS_LATITUDE <= lat <= MAX_GPS_LATITUDE
+            and MIN_GPS_LONGITUDE <= lon <= MAX_GPS_LONGITUDE
+        ):
+            _LOGGER.warning(
+                "Invalid GPS coordinates: lat=%s, lon=%s (out of range)", lat, lon,
+            )
+            return
+
+        accuracy = _as_finite_float(gps_data.get("accuracy"))
+        accuracy_m = int(accuracy) if accuracy is not None and accuracy > 0 else 0
+
+        # A very poor fix (cold start, parking garage) must not teleport an
+        # already-located vehicle; accept anything when we have no location yet.
+        if (
+            self._attr_latitude is not None
+            and accuracy_m > GPS_ACCURACY_THRESHOLD
+        ):
+            _LOGGER.debug(
+                "Ignoring low-accuracy GPS fix (%sm > %sm threshold)",
+                accuracy_m,
+                GPS_ACCURACY_THRESHOLD,
+            )
+            return
+
+        self._attr_latitude = lat
+        self._attr_longitude = lon
+        self._attr_location_accuracy = accuracy_m
+
+        # Optional attributes: unusable values clear the attribute rather than
+        # retaining a stale reading from a previous fix.
+        self._altitude = _as_finite_float(gps_data.get("altitude"))
+        self._speed = _as_finite_float(gps_data.get("speed"))
+        self._heading = _as_finite_float(gps_data.get("heading"))
+
+        _LOGGER.debug(
+            "Updated GPS location: %s, %s (accuracy: %sm)",
+            self._attr_latitude,
+            self._attr_longitude,
+            self._attr_location_accuracy,
+        )
 
     async def async_added_to_hass(self) -> None:
         """Restore last known location when entity is added."""

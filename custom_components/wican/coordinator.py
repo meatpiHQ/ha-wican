@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+from math import isfinite
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.const import MAX_LENGTH_STATE_STATE
+from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -83,6 +86,25 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return self._data
 
+    @callback
+    def async_update_listeners(self) -> None:
+        """Update all registered listeners, isolating failures.
+
+        The base implementation stops at the first listener that raises, so a
+        single entity failing to write its state (for example because the
+        device pushed a value Home Assistant's state machine rejects) would
+        silently abort updates for every entity registered after it. Contain
+        each listener so one bad value can never take down the rest.
+        """
+        for update_callback, _ in list(self._listeners.values()):
+            try:
+                update_callback()
+            except Exception:
+                _LOGGER.exception(
+                    "Error while updating a WiCAN entity listener; "
+                    "continuing with remaining entities",
+                )
+
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh of the coordinator.
 
@@ -121,7 +143,15 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Notify all entities that data has been updated (also marks the
         # coordinator successful again, recovering from any stale state).
-        self.async_set_updated_data(self._data)
+        # Contained: a failure while notifying entities must not abort the
+        # webhook handler, which still has device-info persistence and
+        # PID-discovery work to do after this call.
+        try:
+            self.async_set_updated_data(self._data)
+        except Exception:
+            _LOGGER.exception(
+                "Unexpected error while notifying entities of new WiCAN data",
+            )
 
     def _validate_device_identity(self, data: dict[str, Any]) -> None:
         """Ensure device identity hasn't changed.
@@ -144,8 +174,20 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # This maintains backward compatibility with older firmware
             return
 
+        # Compare ids as strings so a firmware that serializes the id as a
+        # JSON number still matches the stored string form. A non-scalar id
+        # can never match anything and falls through to the mismatch path.
+        if isinstance(incoming_device_id, (int, float)) and not isinstance(
+            incoming_device_id, bool,
+        ):
+            incoming_device_id = str(incoming_device_id)
+
         # Get stored device_id from config entry
         stored_device_id = self.config_entry.data.get("device_id")
+        if isinstance(stored_device_id, (int, float)) and not isinstance(
+            stored_device_id, bool,
+        ):
+            stored_device_id = str(stored_device_id)
 
         if not stored_device_id:
             # First time seeing device_id - this is okay
@@ -167,8 +209,8 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 translation_domain=DOMAIN,
                 translation_key="device_mismatch",
                 translation_placeholders={
-                    "expected": stored_device_id,
-                    "actual": incoming_device_id,
+                    "expected": str(stored_device_id),
+                    "actual": str(incoming_device_id),
                 },
             )
 
@@ -197,9 +239,21 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Ignoring non-scalar value for %s: %r", key, raw_value)
             return None
 
+        # JSON parsing accepts NaN/Infinity/1e999; the state machine does not.
+        if isinstance(raw_value, float) and not isfinite(raw_value):
+            _LOGGER.debug("Ignoring non-finite value for %s: %r", key, raw_value)
+            return None
+
+        if isinstance(raw_value, str):
+            return self._normalize_string_value(key, raw_value)
+
+        return raw_value
+
+    def _normalize_string_value(self, key: str, raw_value: str) -> Any:
+        """Normalize a string sensor value (unit suffixes, numerics, length)."""
         # Battery voltage: strip "V" / " V" suffix (any case) and convert to float
         # Handles firmware variants: "12.5V", "12.5 V", "12.5v", " 12.5 V "
-        if key == "batt_voltage" and isinstance(raw_value, str):
+        if key == "batt_voltage":
             _LOGGER.debug("Raw batt_voltage from device: %r", raw_value)
             stripped = raw_value.strip()
             if stripped.upper().endswith("V"):
@@ -214,14 +268,22 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return raw_value
 
         # Generic numeric string conversion
-        if isinstance(raw_value, str):
-            # Check if it looks like a number
-            cleaned = raw_value.replace(".", "", 1).replace("-", "", 1)
-            if cleaned.isdigit():
-                try:
-                    return float(raw_value) if "." in raw_value else int(raw_value)
-                except ValueError:
-                    pass
+        cleaned = raw_value.replace(".", "", 1).replace("-", "", 1)
+        if cleaned.isdigit():
+            try:
+                return float(raw_value) if "." in raw_value else int(raw_value)
+            except ValueError:
+                pass
+
+        # The state machine rejects states longer than 255 characters.
+        # Truncate instead of letting the write blow up.
+        if len(raw_value) > MAX_LENGTH_STATE_STATE:
+            _LOGGER.warning(
+                "Truncating overlong value for %s (%d characters)",
+                key,
+                len(raw_value),
+            )
+            return raw_value[:MAX_LENGTH_STATE_STATE]
 
         return raw_value
 
