@@ -70,8 +70,8 @@ silver:
       
     - requirement: "Tests with >90% coverage"
       status: compliant
-      notes: "97.1% code coverage, 575 passing tests (100% pass rate)"
-      coverage: 97.2
+      notes: "97.1% code coverage, 616 passing tests (100% pass rate)"
+      coverage: 97.4
       test_pass_rate: 100
       evidence: "tests/ directory with 32 test files incl. multi-device-type simulator (DEVICE_PRESETS + SimulatedDeviceApi), failure-injection, device-type matrix, API-client, button, and migration suites"
       improvement_plan: "Maintained excellent coverage with comprehensive tests"
@@ -119,7 +119,7 @@ silver:
   assessment: passed
   notes: |
     All Silver requirements met. Integration is production-ready with excellent
-    architecture and code quality. Test coverage is 97.1% with 575 passing tests.
+    architecture and code quality. Test coverage is 97.1% with 616 passing tests.
     Integration follows modern HA patterns and best practices throughout.
 
 # ============================================================================
@@ -131,8 +131,8 @@ gold:
   requirements:
     - requirement: "Test coverage >95%"
       status: compliant
-      notes: "97.1% coverage, 575 passing tests (100% pass rate)"
-      current: 97.2
+      notes: "97.1% coverage, 616 passing tests (100% pass rate)"
+      current: 97.4
       target: 95
       evidence: |
         - coordinator.py, device_tracker.py, binary_sensor.py, config_flow.py,
@@ -199,7 +199,7 @@ gold:
     - Bounded growth: dynamic PID cap, sanitized config-entry writes
     - IP caching and coalesced webhook re-registration for performance
     - GPS location tracking with accuracy filtering
-    - 575 passing tests with 100% pass rate
+    - 616 passing tests with 100% pass rate
 
     Integration is production-ready and demonstrates exceptional gold-level quality in
     architecture, implementation, and test coverage. Ready for core submission.
@@ -371,11 +371,11 @@ technical_compliance:
 
 testing:
   statistics:
-    total_tests: 575
-    passing: 575
+    total_tests: 616
+    passing: 616
     skipped: 0
     pass_rate: 100
-    code_coverage: 97.2
+    code_coverage: 97.4
 
   coverage_by_module:
     api: 100
@@ -405,7 +405,7 @@ testing:
     hardening_units: "tests/test_hardening.py - listener isolation, sanitizer edge types, lifecycle races"
 
   quality_gates:
-    - "pytest: 575 passed, coverage 97.2%"
+    - "pytest: 616 passed, coverage 97.4%"
     - "mypy --strict: 0 errors"
     - "ruff: clean on custom_components/wican"
 
@@ -548,7 +548,7 @@ conclusion:
     strict typing, a hardened data path, and exhaustive testing.
 
     Key achievements:
-    - 97.2% test coverage, 575 tests, 100% pass rate
+    - 97.4% test coverage, 616 tests, 100% pass rate
     - mypy --strict clean (Platinum strict-typing rule)
     - Unbreakable data path: hostile/corrupt device data degrades gracefully,
       proven by a device simulator with failure-injection suites

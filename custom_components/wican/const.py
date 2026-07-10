@@ -70,6 +70,29 @@ HISTORY_EXPORT_MAX_PAGES = 200
 HISTORY_EXPORT_PAGE_BYTES = 2 * 1024 * 1024  # size cap per export page
 HISTORY_SYNC_MIN_INTERVAL = 300  # seconds between sync runs per entry
 
+# Remote device catalog: declarative device-type definitions pulled from
+# GitHub (like params.json), so a new MeatPi product gets first-class
+# support without an integration release. Design: notes/DEVICE_CATALOG.md.
+# TODO(meatpi): placeholder — point at the real repo once it exists.
+DEVICE_CATALOG_URL = (
+    "https://raw.githubusercontent.com/meatpiHQ/meatpi-devices/main/"
+    "device_catalog.json"
+)
+CATALOG_SCHEMA_VERSION = 1
+CATALOG_STORAGE_KEY = f"{DOMAIN}.device_catalog"
+CATALOG_STORAGE_VERSION = 1
+CATALOG_REFRESH_INTERVAL = 86400  # seconds between remote fetch attempts
+CATALOG_FETCH_TIMEOUT = 15  # seconds
+CATALOG_MAX_BYTES = 262144  # 256 KiB fetch cap
+# Bounds on catalog content — a compromised or corrupt catalog must not be
+# able to balloon the registry or entity set.
+CATALOG_MAX_DEVICE_TYPES = 64
+CATALOG_MAX_KEYWORDS = 8
+CATALOG_MAX_KEYWORD_LENGTH = 32
+CATALOG_MAX_MODEL_LENGTH = 64
+CATALOG_MAX_SENSORS = 32
+CATALOG_MAX_FIELD_LENGTH = 128
+
 # Device API levels (capability probe result)
 API_LEVEL_LEGACY = 0  # webhook-only firmware (pre-V6)
 API_LEVEL_V6 = 6  # full /api/* HTTP surface

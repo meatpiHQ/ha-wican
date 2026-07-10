@@ -147,10 +147,18 @@ entities; telemetry is unaffected because it is outbound from the device.
 
 ## Part B — What to add in the integration
 
+> **Preferred path (2026-07-10): don't touch the integration at all.**
+> Add the product to the **device catalog** (`DEVICE_CATALOG.md`) — an
+> entry there provides the model name, hardware keywords, product
+> sensors, and firmware coordinates, and reaches every install within a
+> day, no release needed. The steps below are only required for products
+> that need new *behavior* (new entity kinds, control logic, parsers) —
+> or until the catalog repo exists.
+
 Worked example: suppose we're adding **ESPNetlink** first-class support
 (profile already exists; treat this as the template for the next product).
 
-### B1. Declare the profile — `devices.py`
+### B1. Declare the profile — `devices.py` (or the catalog)
 
 ```python
 DEVICE_TYPE_ESPNETLINK = "espnetlink"

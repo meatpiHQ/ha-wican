@@ -1,0 +1,27 @@
+{
+    "schema": 1,
+    "_comment": "Bundled fallback copy of the MeatPi device catalog. The living document is published at https://github.com/meatpiHQ/meatpi-devices (placeholder — repo pending) and fetched at runtime; keep this copy in sync when cutting releases. Reserved slugs (wican, wican_usb, wican_pro, meatpi) are defined in code and ignored here.",
+    "device_types": {
+        "espnetlink": {
+            "model": "ESPNetlink",
+            "hw_keywords": ["espnetlink", "netlink"],
+            "supports_obd_pids": false,
+            "supports_gps": true,
+            "firmware": null,
+            "sensors": [
+                {
+                    "key": "lte_rssi",
+                    "name": "LTE signal",
+                    "device_class": "signal_strength",
+                    "unit": "dBm",
+                    "diagnostic": true
+                },
+                {
+                    "key": "lte_operator",
+                    "name": "LTE operator",
+                    "diagnostic": true
+                }
+            ]
+        }
+    }
+}

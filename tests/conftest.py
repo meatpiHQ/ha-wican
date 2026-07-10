@@ -27,6 +27,30 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 
 @pytest.fixture(autouse=True)
+def mock_catalog_fetch() -> Generator[MagicMock]:
+    """Keep the device-catalog remote fetch off the network in every test.
+
+    The bundled catalog still loads and applies normally; only the GitHub
+    fetch is stubbed to "unreachable". Catalog fetch tests re-patch or
+    call the real function against aioclient_mock.
+    """
+    with patch(
+        "custom_components.wican.catalog._async_fetch_remote",
+        return_value=None,
+    ) as fetch:
+        yield fetch
+
+
+@pytest.fixture(autouse=True)
+def reset_device_catalog() -> Generator[None]:
+    """Reset the module-level catalog registry between tests."""
+    yield
+    from custom_components.wican.devices import apply_catalog
+
+    apply_catalog({})
+
+
+@pytest.fixture(autouse=True)
 def mock_capability_probe() -> Generator[MagicMock]:
     """Keep the device capability probe off the network in every test.
 

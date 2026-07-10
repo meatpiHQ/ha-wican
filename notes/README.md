@@ -10,6 +10,7 @@ Documentation for the MeatPi Home Assistant integration (HA domain:
 | [MEATPI_INTEGRATION_PLAN.md](MEATPI_INTEGRATION_PLAN.md) | **The architecture document.** Brand/domain decision, device-type framework, control channel, and the executed phase-by-phase record (rebrand → profiles → V6 API → buttons → robustness → history backfill). |
 | [ADDING_A_DEVICE.md](ADDING_A_DEVICE.md) | **How to add a new MeatPi product.** Part A: the device contract firmware must implement (mandatory webhook level + optional V6 control level). Part B: integration-side steps, with checklists. |
 | [FIRMWARE_API_FEEDBACK.md](FIRMWARE_API_FEEDBACK.md) | Requested firmware API changes (device identity, `_meatpi._tcp` mDNS, payload schema version, generic action invoke, logger export route, ESPNetlink telemetry shape) with status per ask. |
+| [DEVICE_CATALOG.md](DEVICE_CATALOG.md) | The remote device-catalog spec: schema, validation bounds, publishing workflow for `meatpiHQ/meatpi-devices` (repo pending). |
 | [HISTORICAL_DATA_SYNC.md](HISTORICAL_DATA_SYNC.md) | History backfill: research (what HA allows), the implemented design (SD card → long-term statistics), limitations, and future phases (sum-type totals, trip viewer). |
 | [HTTP_API.md](HTTP_API.md) | Mirror of the WiCAN firmware V6 HTTP API route map (conventions + every `/api/*` surface). Source of truth lives with the firmware; keep in sync. |
 | [DEVICE_COMPATIBILITY_GUIDE.md](DEVICE_COMPATIBILITY_GUIDE.md) | The device-side contract as derived from integration source (Level 1 detail behind ADDING_A_DEVICE.md). |

@@ -111,7 +111,7 @@ rules:
   test-coverage:
     status: done
     comment: >
-      97.2% overall, 575 tests (coordinator.py, device_tracker.py,
+      97.4% overall, 616 tests (coordinator.py, device_tracker.py,
       binary_sensor.py, button.py, api.py, devices.py at 100%). Includes an
       end-to-end
       device simulator plus failure-injection suites (test_device_chaos.py,

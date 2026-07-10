@@ -22,6 +22,23 @@ DEVICE_TYPE_GENERIC = "meatpi"
 
 
 @dataclass(frozen=True, kw_only=True)
+class CatalogSensorDef:
+    """A declarative sensor definition from the device catalog.
+
+    Maps a key in the device's pushed ``status`` object to a sensor
+    entity. Purely data — it feeds the existing, hardened sensor
+    machinery and can never ship behavior.
+    """
+
+    key: str
+    name: str
+    device_class: str | None = None
+    unit: str | None = None
+    diagnostic: bool = True
+    icon: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class MeatPiDeviceProfile:
     """Declarative description of one MeatPi product.
 
@@ -54,6 +71,14 @@ class MeatPiDeviceProfile:
 
     supports_gps: bool = False
     """Whether the product can push a ``gps`` section (device tracker)."""
+
+    firmware_asset_pattern: str | None = None
+    """Glob-style release-asset name pattern for OTA updates (catalog
+    field; reserved for the update platform, not yet consumed)."""
+
+    extra_sensors: tuple[CatalogSensorDef, ...] = ()
+    """Product-specific sensors from the device catalog, keyed off the
+    pushed ``status`` object."""
 
 
 DEVICE_PROFILES: dict[str, MeatPiDeviceProfile] = {
@@ -119,14 +144,56 @@ WICAN_FAMILY_TYPES = frozenset(
     {DEVICE_TYPE_WICAN, DEVICE_TYPE_WICAN_USB, DEVICE_TYPE_WICAN_PRO},
 )
 
+# Slugs whose behavior is coupled to integration code (firmware-asset
+# matching in update.py, OBD gating, the generic fallback): the remote
+# device catalog can never redefine these.
+RESERVED_DEVICE_TYPES = frozenset(
+    {*WICAN_FAMILY_TYPES, DEVICE_TYPE_GENERIC},
+)
+
+# Device-type profiles from the remote catalog (catalog.py). Replaced
+# atomically by apply_catalog(); consulted after the built-ins.
+_CATALOG_PROFILES: dict[str, MeatPiDeviceProfile] = {}
+
+
+def apply_catalog(profiles: dict[str, MeatPiDeviceProfile]) -> None:
+    """Install catalog-defined profiles (reserved slugs are dropped).
+
+    Catalog entries take precedence over same-named built-ins (the catalog
+    is the living source; built-ins are the offline fallback) — except the
+    reserved slugs, whose behavior is code-coupled.
+    """
+    global _CATALOG_PROFILES  # noqa: PLW0603 — module-level registry by design
+    _CATALOG_PROFILES = {
+        slug: profile
+        for slug, profile in profiles.items()
+        if slug not in RESERVED_DEVICE_TYPES
+    }
+
+
+def catalog_profiles() -> dict[str, MeatPiDeviceProfile]:
+    """Return the currently installed catalog profiles (a copy)."""
+    return dict(_CATALOG_PROFILES)
+
+
+def is_known_device_type(device_type: object) -> bool:
+    """Return True when the slug maps to a built-in or catalog profile."""
+    return isinstance(device_type, str) and (
+        device_type in DEVICE_PROFILES or device_type in _CATALOG_PROFILES
+    )
+
 # Short, ambiguous keywords must match a whole token of the hardware string
 # ("WiCAN-PRO" → yes; "MeatPi ProtoBoard" → no). Longer brand keywords match
-# as plain substrings.
+# as plain substrings. The same rule protects catalog-defined keywords.
 _TOKEN_ONLY_KEYWORDS = frozenset({"pro", "usb"})
+_MIN_SUBSTRING_KEYWORD_LENGTH = 4
 
 
 def _keyword_matches(keyword: str, hw_lower: str, tokens: frozenset[str]) -> bool:
-    if keyword in _TOKEN_ONLY_KEYWORDS:
+    if (
+        keyword in _TOKEN_ONLY_KEYWORDS
+        or len(keyword) < _MIN_SUBSTRING_KEYWORD_LENGTH
+    ):
         return keyword in tokens
     return keyword in hw_lower
 
@@ -144,12 +211,23 @@ def infer_device_type(hw_version: object) -> str:
 
     hw_lower = hw_version.lower()
     tokens = frozenset(re.split(r"[^a-z0-9]+", hw_lower))
-    for device_type in _INFERENCE_ORDER:
-        profile = DEVICE_PROFILES[device_type]
-        if any(
+
+    def _matches(profile: MeatPiDeviceProfile) -> bool:
+        return any(
             _keyword_matches(keyword, hw_lower, tokens)
             for keyword in profile.hw_version_keywords
-        ):
+        )
+
+    # Catalog profiles override same-named built-ins; then the built-in
+    # specific types; unmatched catalog types come before the wican
+    # default (they are more specific than the fallback).
+    for device_type in _INFERENCE_ORDER:
+        if device_type == DEVICE_TYPE_WICAN:
+            for slug in sorted(_CATALOG_PROFILES):
+                if _matches(_CATALOG_PROFILES[slug]):
+                    return slug
+        candidate = _CATALOG_PROFILES.get(device_type) or DEVICE_PROFILES[device_type]
+        if _matches(candidate):
             return device_type
 
     return DEVICE_TYPE_WICAN
@@ -158,9 +236,14 @@ def infer_device_type(hw_version: object) -> str:
 def get_profile(device_type: object) -> MeatPiDeviceProfile:
     """Return the profile for a stored device-type slug.
 
-    Unknown slugs (from a newer integration version's entry, or manual
-    edits) fall back to the generic profile so the entry still loads.
+    Catalog profiles win over same-named built-ins (except reserved slugs,
+    which never enter the catalog registry). Unknown slugs (from a newer
+    integration version's entry, or manual edits) fall back to the generic
+    profile so the entry still loads.
     """
-    if isinstance(device_type, str) and device_type in DEVICE_PROFILES:
-        return DEVICE_PROFILES[device_type]
+    if isinstance(device_type, str):
+        if device_type in _CATALOG_PROFILES:
+            return _CATALOG_PROFILES[device_type]
+        if device_type in DEVICE_PROFILES:
+            return DEVICE_PROFILES[device_type]
     return DEVICE_PROFILES[DEVICE_TYPE_GENERIC]

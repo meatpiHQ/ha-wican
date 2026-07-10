@@ -306,6 +306,38 @@ Known limitation (by HA design, documented in README): backfill is
 hourly; raw states/logbook stay empty for the offline period; GPS
 location history cannot be backfilled.
 
+### Phase 9 — Remote device catalog (new products without integration releases)
+(added 2026-07-10, same day, on request; spec: `DEVICE_CATALOG.md`)
+
+- **`catalog.py`**: fetch/validate/apply/persist manager for a JSON
+  catalog of device-type definitions published on GitHub (placeholder
+  repo `meatpiHQ/meatpi-devices` — pending). Bundled fallback in
+  `data/device_catalog.json`; fetched copy persisted in **`.storage`**
+  (deliberately not the package dir — the params.json lesson); refresh
+  at most once per 24 h; strict bounds on everything (types, slugs,
+  keywords, sensors, sizes); an invalid/hostile/unreachable catalog
+  degrades to the previous good copy, never breaks setup.
+- **`devices.py`**: dynamic registry layered over the built-ins.
+  Catalog profiles override same-named built-ins **except the reserved
+  slugs** (`wican`, `wican_usb`, `wican_pro`, `meatpi` — code-coupled).
+  Inference includes catalog keywords (short keywords token-matched);
+  `is_known_device_type` backs the zeroconf TXT check; profiles gain
+  `extra_sensors` (declarative `CatalogSensorDef`s) and
+  `firmware_asset_pattern` (reserved for the update platform).
+- **Sensors from data**: catalog sensor definitions build entity
+  descriptions through the same validation as dynamic PID sensors; the
+  bundled catalog already gives **ESPNetlink** its LTE signal/operator
+  sensors. Base entity now honors an explicit description name.
+- **Catalog-aware migration**: 1.1→1.2 loads the catalog before
+  inferring device types.
+- **Tests** (`test_catalog.py`, 35): parsing/validation incl. hostile
+  documents (floods, bad slugs/icons/repos, oversized fields), registry
+  semantics (override/reserved/inference/token rules), manager flows
+  (bundled/stored/corrupt-storage/refresh/rate-limit/never-raises),
+  real fetch failure modes over the aiohttp mocker, and end-to-end: a
+  "solarpi" product defined **only** in the catalog gets its model,
+  inference, and working product sensors through the device simulator.
+
 ## 5. What explicitly did NOT change (backward compatibility)
 
 - Webhook payload handling, identity validation, sanitization,

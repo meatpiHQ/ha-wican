@@ -32,8 +32,8 @@ lives in the official [WiCAN device documentation](https://meatpihq.github.io/wi
 | WiCAN OBD-II | ✅ | Connects to the vehicle's OBD-II port. |
 | WiCAN-Pro | ✅ | Adds support for multiple webhook URLs on firmware `v4.49+` (local HTTP + external HTTPS); firmware V6 adds the control HTTP API. |
 | WiCAN USB | ✅ | Same integration; requires network connectivity to Home Assistant. |
-| ESPNetlink | 🔜 | LTE + GPS gateway; profile is already in place, first-class entities land with the product firmware. |
-| Future MeatPi devices | ✅ (generic) | Any device implementing the MeatPi device contract (see `notes/ADDING_A_DEVICE.md`) works under a generic profile without an integration update. |
+| ESPNetlink | 🔜 | LTE + GPS gateway; profile and product sensors (LTE signal/operator, GPS tracking) are already in place, awaiting the product firmware. |
+| Future MeatPi devices | ✅ | Any device implementing the MeatPi device contract works immediately; full product support (model name, product sensors) arrives via the remote **device catalog** without an integration update (see `notes/DEVICE_CATALOG.md`). |
 
 WiCAN devices must be running firmware with the **AutoPID** protocol enabled
 and be reachable from Home Assistant on the local network. Very old firmware
@@ -277,6 +277,7 @@ declarative profiles, telemetry is webhook push on every firmware, and
 control/discovery uses the device HTTP API (firmware V6+) when present.
 
 - Architecture and design decisions: [notes/MEATPI_INTEGRATION_PLAN.md](notes/MEATPI_INTEGRATION_PLAN.md)
+- Remote device catalog (new products without releases): [notes/DEVICE_CATALOG.md](notes/DEVICE_CATALOG.md)
 - Adding a new MeatPi device (integration + firmware contract): [notes/ADDING_A_DEVICE.md](notes/ADDING_A_DEVICE.md)
 - Requested firmware API changes: [notes/FIRMWARE_API_FEEDBACK.md](notes/FIRMWARE_API_FEEDBACK.md)
 - Device HTTP API (firmware V6): [notes/HTTP_API.md](notes/HTTP_API.md)

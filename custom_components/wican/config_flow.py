@@ -23,7 +23,7 @@ from .const import (
     MAX_POST_INTERVAL,
     MIN_POST_INTERVAL,
 )
-from .devices import DEVICE_PROFILES, DEVICE_TYPE_GENERIC
+from .devices import DEVICE_TYPE_GENERIC, is_known_device_type
 from .helpers import resolve_webhook_url
 
 if TYPE_CHECKING:
@@ -126,13 +126,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         mac_address = properties.get("mac", b"").decode("utf-8") if isinstance(properties.get("mac"), bytes) else properties.get("mac", "")
         device_id = properties.get("device_id", b"").decode("utf-8") if isinstance(properties.get("device_id"), bytes) else properties.get("device_id", "")
 
-        # Device type from TXT records (newer firmware). An unknown slug on a
-        # MeatPi service maps to the generic profile; legacy advertisements
-        # leave it unset and setup infers it from the reported hw_version.
+        # Device type from TXT records (newer firmware). Built-in and
+        # catalog-defined slugs are accepted; an unknown slug on a MeatPi
+        # service maps to the generic profile; legacy advertisements leave
+        # it unset and setup infers it from the reported hw_version.
         raw_device_type = properties.get("device_type", "")
         if isinstance(raw_device_type, bytes):
             raw_device_type = raw_device_type.decode("utf-8", errors="replace")
-        if raw_device_type in DEVICE_PROFILES:
+        if is_known_device_type(raw_device_type):
             device_type: str | None = raw_device_type
         elif service_type.startswith("_meatpi."):
             device_type = DEVICE_TYPE_GENERIC

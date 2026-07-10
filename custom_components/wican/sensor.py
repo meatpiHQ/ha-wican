@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
     from . import WiCANConfigEntry
+    from .devices import CatalogSensorDef
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -333,6 +334,31 @@ def _persist_pid_entities(
     hass.config_entries.async_update_entry(config_entry, data=new_data)
 
 
+def _build_catalog_sensor_description(
+    definition: CatalogSensorDef,
+) -> WiCANSensorEntityDescription:
+    """Build an entity description from a catalog sensor definition.
+
+    Catalog fields are data from a remote document: the device class and
+    unit go through the same validation the dynamic PID sensors use, so a
+    bad catalog entry degrades to a plain sensor instead of a broken one.
+    """
+    unit = definition.unit
+    if unit is not None and len(unit) > MAX_PID_CONFIG_FIELD_LENGTH:
+        unit = None
+    device_class = _normalize_device_class(definition.device_class, unit)
+    return WiCANSensorEntityDescription(
+        key=definition.key,
+        name=definition.name,
+        device_class=device_class,
+        native_unit_of_measurement=unit,
+        icon=definition.icon,
+        entity_category=(
+            EntityCategory.DIAGNOSTIC if definition.diagnostic else None
+        ),
+    )
+
+
 async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     config_entry: WiCANConfigEntry,
@@ -344,6 +370,17 @@ async def async_setup_entry(  # noqa: C901
         WiCANSensorEntity(config_entry, description)
         for description in SENSOR_DESCRIPTIONS
     )
+
+    # Product-specific sensors declared by the device catalog (keys into
+    # the pushed "status" object, like the static descriptions above).
+    catalog_sensors = config_entry.runtime_data.device_profile.extra_sensors
+    if catalog_sensors:
+        async_add_entities(
+            WiCANSensorEntity(
+                config_entry, _build_catalog_sensor_description(definition),
+            )
+            for definition in catalog_sensors
+        )
 
     DYNAMIC_PID_SENSORS[config_entry.entry_id] = {}
 

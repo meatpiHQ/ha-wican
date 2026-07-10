@@ -477,6 +477,10 @@ class WiCANDeviceSimulator:
             data=data,
             options=options or {CONF_POST_INTERVAL: 15},
             unique_id=self.mac.replace(":", "").lower(),
+            # Simulated devices model current installs (schema 1.2); the
+            # migration suites cover legacy entries explicitly.
+            version=1,
+            minor_version=2,
         )
         self.entry.add_to_hass(self.hass)
 

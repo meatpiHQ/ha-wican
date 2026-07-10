@@ -24,6 +24,7 @@ import voluptuous as vol
 from yarl import URL
 
 from .api import MeatPiApiClient
+from .catalog import async_setup_catalog
 from .const import (
     COMPONENT_DATA_LOGGER,
     CONF_DEVICE_TYPE,
@@ -376,6 +377,9 @@ async def async_migrate_entry(
         return False
 
     if entry.minor_version < 2:
+        # Load the device catalog first so inference can resolve
+        # catalog-defined product types, not just the built-ins.
+        await async_setup_catalog(hass)
         new_data = dict(entry.data)
         if not new_data.get(CONF_DEVICE_TYPE):
             new_data[CONF_DEVICE_TYPE] = infer_device_type(
@@ -450,6 +454,11 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         except Exception:
             _LOGGER.warning("Failed to generate webhook_id; setup may fail")
             return False
+
+    # Load the device catalog (bundled/stored copy applies immediately, a
+    # remote refresh runs in the background at most once per day) so
+    # catalog-defined products resolve to their real profiles.
+    await async_setup_catalog(hass)
 
     # Resolve the device-type profile (brand framework). Migration backfills
     # device_type for old entries; this guard covers entries created by
