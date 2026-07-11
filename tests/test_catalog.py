@@ -563,3 +563,27 @@ def test_reserved_slug_without_new_sensors_is_not_installed() -> None:
     apply_catalog(parse_catalog(_catalog(wican={"model": "WiCAN OBD"})))
     assert "wican" not in catalog_profiles()
     assert get_profile("wican").model == "WiCAN OBD"
+
+
+async def test_bundled_wican_diagnostic_sensors_create_entities(
+    hass, init_integration, mock_webhook_data, hass_client,
+) -> None:
+    """The bundled catalog's WiCAN diagnostic sensors become live entities.
+
+    First real use of extend-only reserved entries: sleep_mode,
+    can_protocol, ecu_pids_num, and loop_status ship via the catalog,
+    not via code.
+    """
+    from homeassistant.const import CONF_WEBHOOK_ID
+
+    entry = init_integration
+    client = await hass_client()
+    await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=mock_webhook_data,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.wican_device_sleep_mode").state == "off"
+    assert hass.states.get("sensor.wican_device_can_protocol").state == "Auto"
+    assert hass.states.get("sensor.wican_device_ecu_pid_count").state == "5"
+    assert hass.states.get("sensor.wican_device_autopid_loop").state == "Stopped"

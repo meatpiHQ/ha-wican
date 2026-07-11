@@ -4,15 +4,90 @@
   "device_types": {
     "wican": {
       "model": "WiCAN OBD",
-      "sensors": []
+      "sensors": [
+        {
+          "key": "sleep_mode",
+          "name": "Sleep mode",
+          "icon": "mdi:sleep",
+          "diagnostic": true
+        },
+        {
+          "key": "can_protocol",
+          "name": "CAN protocol",
+          "icon": "mdi:vector-polyline",
+          "diagnostic": true
+        },
+        {
+          "key": "ecu_pids_num",
+          "name": "ECU PID count",
+          "icon": "mdi:counter",
+          "diagnostic": true
+        },
+        {
+          "key": "loop_status",
+          "name": "AutoPID loop",
+          "icon": "mdi:sync",
+          "diagnostic": true
+        }
+      ]
     },
     "wican_usb": {
       "model": "WiCAN USB",
-      "sensors": []
+      "sensors": [
+        {
+          "key": "sleep_mode",
+          "name": "Sleep mode",
+          "icon": "mdi:sleep",
+          "diagnostic": true
+        },
+        {
+          "key": "can_protocol",
+          "name": "CAN protocol",
+          "icon": "mdi:vector-polyline",
+          "diagnostic": true
+        },
+        {
+          "key": "ecu_pids_num",
+          "name": "ECU PID count",
+          "icon": "mdi:counter",
+          "diagnostic": true
+        },
+        {
+          "key": "loop_status",
+          "name": "AutoPID loop",
+          "icon": "mdi:sync",
+          "diagnostic": true
+        }
+      ]
     },
     "wican_pro": {
       "model": "WiCAN Pro",
-      "sensors": []
+      "sensors": [
+        {
+          "key": "sleep_mode",
+          "name": "Sleep mode",
+          "icon": "mdi:sleep",
+          "diagnostic": true
+        },
+        {
+          "key": "can_protocol",
+          "name": "CAN protocol",
+          "icon": "mdi:vector-polyline",
+          "diagnostic": true
+        },
+        {
+          "key": "ecu_pids_num",
+          "name": "ECU PID count",
+          "icon": "mdi:counter",
+          "diagnostic": true
+        },
+        {
+          "key": "loop_status",
+          "name": "AutoPID loop",
+          "icon": "mdi:sync",
+          "diagnostic": true
+        }
+      ]
     },
     "espnetlink": {
       "model": "ESPNetlink",
