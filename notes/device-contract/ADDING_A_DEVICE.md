@@ -119,11 +119,12 @@ readings and survives restarts.
 
 #### A4. OTA upload endpoint (optional, enables the update entity)
 
-The integration uploads to `POST /upload/ota.bin` (multipart field
-`ota_file`) — the legacy WiCAN route, which V6 firmware must keep serving.
-(V6 also exposes `POST /api/ota/upload`, but the integration does not call
-it yet; a V6-only product without the legacy route gets no working update
-entity today.)
+The integration tries `POST /api/ota/upload` first (raw
+`application/octet-stream` body — the contract-v2 route) and falls back
+to the legacy `POST /upload/ota.bin` (multipart field `ota_file`). The
+legacy route is kept deliberately: it is the bridge that lets pre-v5
+firmware update to a supported version from HA. New products only need
+the V6 route.
 Firmware images must be published as GitHub release assets with
 predictable, product-unique names (see `FIRMWARE_DEVICE_TYPES.md` for the
 WiCAN naming scheme; new products must pick a disjoint pattern, e.g.

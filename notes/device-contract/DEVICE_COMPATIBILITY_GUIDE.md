@@ -28,7 +28,7 @@ Contents:
 4. Requirement 3 — pushing data to HA (the webhook payload)
 5. The data contract (every field the integration reads)
 6. Device identity & stability rules
-7. Requirement 4 — OTA firmware endpoint (`POST /upload/ota.bin`)
+7. Requirement 4 — OTA firmware endpoint (`POST /api/ota/upload`, legacy fallback)
 8. Value formats & normalization
 9. Complete worked examples
 10. Compatibility checklist
@@ -49,7 +49,7 @@ Contents:
  │             │      {status, autopid_data, config, gps}        │              │
  │             │                                                 │              │
  │             │   4. (optional) HA pushes OTA firmware          │              │
- │             │ ◀────────  POST /upload/ota.bin  ────────────── │              │
+ │             │ ◀───────  POST /api/ota/upload  ─────────────── │              │
  └─────────────┘                                                 └──────────────┘
 ```
 
@@ -337,14 +337,17 @@ The firmware `update` entity downloads a `.bin` from GitHub and uploads it to th
 device (`update.py::_upload_firmware_to_device`, `const.py`).
 
 ```
-POST http://<device-host>/upload/ota.bin
-Content-Type: multipart/form-data
+POST http://<device-host>/api/ota/upload
+Content-Type: application/octet-stream
 
-form field name: "ota_file"
-filename:        e.g. "wican-fw_obd_pro_v445p.bin"
-body:            raw firmware bytes
+body: raw firmware bytes
 ```
-- Endpoint path: `/upload/ota.bin` (`OTA_ENDPOINT`).
+- Primary endpoint (contract v2): `/api/ota/upload` (`OTA_V6_ENDPOINT`),
+  raw octet-stream body.
+- Fallback: `POST /upload/ota.bin` multipart (field `ota_file`,
+  `OTA_LEGACY_ENDPOINT`) — deliberately kept as the migration bridge so
+  pre-v5 firmware can be updated to a supported version from HA. New
+  products only need the V6 route.
 - Multipart field name: `ota_file` (`OTA_FORM_FIELD`).
 - The device must accept the upload, flash, and reboot. Return a success (2xx)
   status; a non-2xx becomes a translated "firmware upload failed" error in HA.
@@ -468,7 +471,7 @@ Data push
 - [ ] Keep `device_id` stable and identical in mDNS TXT and `status`.
 
 OTA
-- [ ] Accept `POST /upload/ota.bin` multipart, field `ota_file`; flash + reboot; respond 2xx.
+- [ ] Accept `POST /api/ota/upload` raw octet-stream; flash + reboot; respond 2xx. (Existing WiCAN firmware also keeps `POST /upload/ota.bin` as the migration bridge.)
 - [ ] Name GitHub release assets so Pro builds contain `PRO`/`…p`.
 
 Formats
