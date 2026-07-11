@@ -8,7 +8,7 @@ integration keys off the profile and the runtime capability probe.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 
 from .const import MANUFACTURER
@@ -157,18 +157,34 @@ _CATALOG_PROFILES: dict[str, MeatPiDeviceProfile] = {}
 
 
 def apply_catalog(profiles: dict[str, MeatPiDeviceProfile]) -> None:
-    """Install catalog-defined profiles (reserved slugs are dropped).
+    """Install catalog-defined profiles (reserved slugs are extend-only).
 
     Catalog entries take precedence over same-named built-ins (the catalog
     is the living source; built-ins are the offline fallback) — except the
-    reserved slugs, whose behavior is code-coupled.
+    reserved slugs, whose identity, capability flags, and firmware
+    matching are code-coupled and never come from the catalog. Reserved
+    entries may only ADD sensors: a catalog merge can grow a WiCAN's
+    diagnostic surface, but can never alter behavior existing installs
+    depend on.
     """
     global _CATALOG_PROFILES  # noqa: PLW0603 — module-level registry by design
-    _CATALOG_PROFILES = {
-        slug: profile
-        for slug, profile in profiles.items()
-        if slug not in RESERVED_DEVICE_TYPES
-    }
+    installed: dict[str, MeatPiDeviceProfile] = {}
+    for slug, profile in profiles.items():
+        if slug not in RESERVED_DEVICE_TYPES:
+            installed[slug] = profile
+            continue
+        builtin = DEVICE_PROFILES[slug]
+        known_keys = {sensor.key for sensor in builtin.extra_sensors}
+        added = tuple(
+            sensor
+            for sensor in profile.extra_sensors
+            if sensor.key not in known_keys
+        )
+        if added:
+            installed[slug] = replace(
+                builtin, extra_sensors=builtin.extra_sensors + added,
+            )
+    _CATALOG_PROFILES = installed
 
 
 def catalog_profiles() -> dict[str, MeatPiDeviceProfile]:

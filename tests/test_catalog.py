@@ -523,3 +523,43 @@ async def test_fetch_remote_failures_return_none(
     """Every fetch failure mode degrades to None, never an exception."""
     aioclient_mock.get(DEVICE_CATALOG_URL, **kwargs)
     assert await _async_fetch_remote(hass) is None, reason
+
+
+def test_reserved_slug_catalog_entry_extends_sensors_only() -> None:
+    """A reserved slug in the catalog may ADD sensors, nothing else.
+
+    WiCAN entries live in the catalog for consistency and to ship new
+    diagnostic sensors without an integration release — but their
+    identity, capability flags, and firmware matching stay code-defined,
+    so a catalog merge can never change behavior installs depend on.
+    """
+    profiles = parse_catalog(
+        _catalog(
+            wican_pro={
+                "model": "Renamed Pro",          # ignored (identity)
+                "hw_keywords": ["hijack"],        # ignored (inference)
+                "supports_obd_pids": False,       # ignored (capability)
+                "supports_gps": False,            # ignored (capability)
+                "sensors": [
+                    {"key": "pro_diag", "name": "Pro diagnostic", "unit": "%"},
+                ],
+            },
+        ),
+    )
+    apply_catalog(profiles)
+
+    profile = get_profile(DEVICE_TYPE_WICAN_PRO)
+    # Only the sensor was adopted...
+    sensor_keys = [sensor.key for sensor in profile.extra_sensors]
+    assert "pro_diag" in sensor_keys
+    # ...identity and capabilities remain the built-in's.
+    assert profile.model == "WiCAN Pro"
+    assert profile.supports_obd_pids is True
+    assert infer_device_type("hijack board") == "wican"
+
+
+def test_reserved_slug_without_new_sensors_is_not_installed() -> None:
+    """A reserved entry adding nothing resolves straight to the built-in."""
+    apply_catalog(parse_catalog(_catalog(wican={"model": "WiCAN OBD"})))
+    assert "wican" not in catalog_profiles()
+    assert get_profile("wican").model == "WiCAN OBD"

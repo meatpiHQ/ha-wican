@@ -90,7 +90,16 @@ individually, an invalid document is ignored wholesale):
 3. For each new product: add its entry to the repo document (PR review +
    green CI = your release gate), and mirror it into the bundled file at
    the next integration release so offline installs get it too.
-4. Never repurpose a slug, and never delete one that shipped — config
+4. Reserved slugs (`wican`, `wican_usb`, `wican_pro`, `meatpi`) are
+   **extend-only** (since 2026-07-11): their catalog entries may carry
+   `model` (informational) and `sensors` — the mechanism for shipping a
+   new WiCAN diagnostic sensor without an integration release — while
+   `hw_keywords`, capability flags, and `firmware` stay code-defined
+   (the integration ignores them; the repo's CI rejects them). Older
+   integration versions ignore reserved entries entirely, so this is
+   backward-safe; firmware that does not send a new sensor's key shows
+   it as unknown.
+5. Never repurpose a slug, and never delete one that shipped — config
    entries persist slugs; an unknown slug degrades to the generic
    profile (safe, but cosmetically worse).
 

@@ -1,27 +1,42 @@
 {
-    "schema": 1,
-    "_comment": "Bundled fallback copy of the MeatPi device catalog. The living document is published at https://github.com/meatpiHQ/meatpi-devices and fetched at runtime; keep this copy in sync when cutting releases. Reserved slugs (wican, wican_usb, wican_pro, meatpi) are defined in code and ignored here.",
-    "device_types": {
-        "espnetlink": {
-            "model": "ESPNetlink",
-            "hw_keywords": ["espnetlink", "netlink"],
-            "supports_obd_pids": false,
-            "supports_gps": true,
-            "firmware": null,
-            "sensors": [
-                {
-                    "key": "lte_rssi",
-                    "name": "LTE signal",
-                    "device_class": "signal_strength",
-                    "unit": "dBm",
-                    "diagnostic": true
-                },
-                {
-                    "key": "lte_operator",
-                    "name": "LTE operator",
-                    "diagnostic": true
-                }
-            ]
+  "schema": 1,
+  "_comment": "Bundled fallback copy of the MeatPi device catalog. The living document is published at https://github.com/meatpiHQ/meatpi-devices and fetched at runtime; keep this copy in sync when cutting releases. Reserved slugs (wican, wican_usb, wican_pro, meatpi) are extend-only: entries here may add sensors, while identity, capabilities, and firmware matching stay in code.",
+  "device_types": {
+    "wican": {
+      "model": "WiCAN OBD",
+      "sensors": []
+    },
+    "wican_usb": {
+      "model": "WiCAN USB",
+      "sensors": []
+    },
+    "wican_pro": {
+      "model": "WiCAN Pro",
+      "sensors": []
+    },
+    "espnetlink": {
+      "model": "ESPNetlink",
+      "hw_keywords": [
+        "espnetlink",
+        "netlink"
+      ],
+      "supports_obd_pids": false,
+      "supports_gps": true,
+      "firmware": null,
+      "sensors": [
+        {
+          "key": "lte_rssi",
+          "name": "LTE signal",
+          "device_class": "signal_strength",
+          "unit": "dBm",
+          "diagnostic": true
+        },
+        {
+          "key": "lte_operator",
+          "name": "LTE operator",
+          "diagnostic": true
         }
+      ]
     }
+  }
 }
