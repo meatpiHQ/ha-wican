@@ -68,7 +68,7 @@ if TYPE_CHECKING:
 
     from homeassistant.core import HomeAssistant
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
     from .api import MeatPiApiClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -322,7 +322,7 @@ def aggregate_rows(
 class HistorySync:
     """Per-entry history backfill orchestrator."""
 
-    def __init__(self, hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: MeatPiConfigEntry) -> None:
         """Initialize the sync for one config entry."""
         self._hass = hass
         self._entry = entry
@@ -721,7 +721,7 @@ class HistorySync:
 
 async def async_sync_history(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> HistorySyncResult:
     """Run one history backfill pass for a config entry. Never raises."""
     try:
@@ -733,7 +733,7 @@ async def async_sync_history(
 
 async def async_remove_history_store(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> None:
     """Delete the watermark store when the config entry is removed."""
     await HistorySync(hass, entry).async_remove()

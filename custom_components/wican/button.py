@@ -21,7 +21,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .catalog import async_refresh_device_catalog
 from .const import DOMAIN, SIGNAL_CAPABILITIES_UPDATED
-from .entity import WiCANEntity
+from .entity import MeatPiEntity
 from .exceptions import MeatPiApiConnectionError, MeatPiApiError
 from .param_loader import async_force_params_refresh
 
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
     from .api import MeatPiApiClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ REFRESH_DEFINITIONS_DESCRIPTION = ButtonEntityDescription(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: WiCANConfigEntry,
+    config_entry: MeatPiConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up MeatPi control buttons for capabilities as they are discovered."""
@@ -84,7 +84,7 @@ async def async_setup_entry(
     if getattr(config_entry, "runtime_data", None) is not None:
         async_add_entities(
             [
-                WiCANRefreshDefinitionsButton(
+                MeatPiRefreshDefinitionsButton(
                     config_entry, REFRESH_DEFINITIONS_DESCRIPTION,
                 ),
             ],
@@ -101,7 +101,7 @@ async def async_setup_entry(
         capabilities = runtime.capabilities
         if not capabilities.has_http_api:
             return
-        new_entities: list[WiCANButtonEntity] = []
+        new_entities: list[MeatPiButtonEntity] = []
         for description in BUTTON_DESCRIPTIONS:
             if description.key in added_keys:
                 continue
@@ -109,7 +109,7 @@ async def async_setup_entry(
                 description.required_component,
             ):
                 continue
-            new_entities.append(WiCANButtonEntity(config_entry, description))
+            new_entities.append(MeatPiButtonEntity(config_entry, description))
             added_keys.add(description.key)
         if new_entities:
             _LOGGER.debug(
@@ -131,7 +131,7 @@ async def async_setup_entry(
     )
 
 
-class WiCANRefreshDefinitionsButton(WiCANEntity, ButtonEntity):
+class MeatPiRefreshDefinitionsButton(MeatPiEntity, ButtonEntity):
     """Refresh PID parameter definitions and the device catalog from GitHub.
 
     The one-click support flow: "your parameter was merged — press
@@ -177,7 +177,7 @@ class WiCANRefreshDefinitionsButton(WiCANEntity, ButtonEntity):
         )
 
 
-class WiCANButtonEntity(WiCANEntity, ButtonEntity):
+class MeatPiButtonEntity(MeatPiEntity, ButtonEntity):
     """A control button backed by the device HTTP API."""
 
     __slots__ = ()

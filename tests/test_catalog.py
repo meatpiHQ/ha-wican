@@ -425,11 +425,11 @@ async def test_catalog_defined_device_end_to_end(
     No integration code knows "solarpi": the profile, model name, and
     product sensors all come from the (stored) catalog document.
     """
-    from tests.device_sim import WiCANDeviceSimulator
+    from tests.device_sim import MeatPiDeviceSimulator
 
     await _seed_stored_catalog(hass, _catalog(solarpi=SOLARPI))
 
-    sim = WiCANDeviceSimulator.from_preset(
+    sim = MeatPiDeviceSimulator.from_preset(
         hass, hass_client, "meatpi_generic",
         title="SolarPi Sim", hw_version="SolarPi R1",
     )
@@ -455,11 +455,11 @@ async def test_catalog_inference_from_hw_version_end_to_end(
     hass: HomeAssistant, hass_client: Any,
 ) -> None:
     """A catalog device without a device_type TXT record is inferred."""
-    from tests.device_sim import WiCANDeviceSimulator
+    from tests.device_sim import MeatPiDeviceSimulator
 
     await _seed_stored_catalog(hass, _catalog(solarpi=SOLARPI))
 
-    sim = WiCANDeviceSimulator.from_preset(
+    sim = MeatPiDeviceSimulator.from_preset(
         hass, hass_client, "meatpi_generic",
         title="SolarPi Inferred", hw_version="SolarPi R1",
     )
@@ -472,9 +472,9 @@ async def test_bundled_espnetlink_lte_sensors_end_to_end(
     hass: HomeAssistant, hass_client: Any,
 ) -> None:
     """The bundled catalog gives ESPNetlink its LTE sensors out of the box."""
-    from tests.device_sim import WiCANDeviceSimulator
+    from tests.device_sim import MeatPiDeviceSimulator
 
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "espnetlink")
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "espnetlink")
     await sim.async_setup()
     await sim.push_and_settle(sim.status())
 

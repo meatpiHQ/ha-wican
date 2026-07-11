@@ -10,17 +10,17 @@ from .devices import DEVICE_PROFILES, DEVICE_TYPE_WICAN
 
 if TYPE_CHECKING:
     from .api import MeatPiApiClient
-    from .coordinator import WiCANDataUpdateCoordinator
+    from .coordinator import MeatPiDataUpdateCoordinator
     from .devices import MeatPiDeviceProfile
     from .github_releases import GitHubReleasesCoordinator
     from .history import HistorySyncResult
 
 
 @dataclass
-class WiCANRuntimeData:
+class MeatPiRuntimeData:
     """Runtime data for a MeatPi device config entry."""
 
-    coordinator: WiCANDataUpdateCoordinator
+    coordinator: MeatPiDataUpdateCoordinator
     github_coordinator: GitHubReleasesCoordinator
     webhook_id: str
     post_interval: int

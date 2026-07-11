@@ -293,7 +293,7 @@ async def test_device_tracker_gps_restoration_value_errors(
 ) -> None:
     """Test device tracker GPS restoration handles ValueError/TypeError."""
     from unittest.mock import Mock
-    from custom_components.wican.device_tracker import WiCANDeviceTrackerEntity
+    from custom_components.wican.device_tracker import MeatPiDeviceTrackerEntity
     
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -403,9 +403,9 @@ async def test_tracker_device_info_matches_shared_entity_info(
     entry = init_integration
     profile = entry.runtime_data.device_profile
 
-    from custom_components.wican.device_tracker import WiCANDeviceTrackerEntity
+    from custom_components.wican.device_tracker import MeatPiDeviceTrackerEntity
 
-    tracker_info = WiCANDeviceTrackerEntity(entry).device_info
+    tracker_info = MeatPiDeviceTrackerEntity(entry).device_info
 
     assert tracker_info["manufacturer"] == profile.manufacturer
     assert tracker_info["model"] == (
@@ -427,13 +427,13 @@ async def test_device_tracker_restore_rejects_out_of_range_coordinates(
     """
     from unittest.mock import Mock, patch
 
-    from custom_components.wican.device_tracker import WiCANDeviceTrackerEntity
+    from custom_components.wican.device_tracker import MeatPiDeviceTrackerEntity
 
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    entity = WiCANDeviceTrackerEntity(mock_config_entry)
+    entity = MeatPiDeviceTrackerEntity(mock_config_entry)
     entity.hass = hass
     mock_state = Mock()
     mock_state.attributes = {"latitude": 999.0, "longitude": 20.0}
@@ -452,13 +452,13 @@ async def test_device_tracker_restore_accepts_valid_coordinates(
     """A sane restored location comes back."""
     from unittest.mock import Mock, patch
 
-    from custom_components.wican.device_tracker import WiCANDeviceTrackerEntity
+    from custom_components.wican.device_tracker import MeatPiDeviceTrackerEntity
 
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    entity = WiCANDeviceTrackerEntity(mock_config_entry)
+    entity = MeatPiDeviceTrackerEntity(mock_config_entry)
     entity.hass = hass
     mock_state = Mock()
     mock_state.attributes = {"latitude": -37.81, "longitude": 144.96}

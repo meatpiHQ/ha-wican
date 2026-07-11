@@ -28,7 +28,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 from custom_components.wican.api import MeatPiApiClient
 from custom_components.wican.const import CONF_HISTORY_SYNC, DOMAIN
 from custom_components.wican.history import async_sync_history
-from tests.device_sim import WiCANDeviceSimulator
+from tests.device_sim import MeatPiDeviceSimulator
 
 NOW = time.time()
 HOUR = int(NOW // 3600) * 3600
@@ -91,9 +91,9 @@ def mock_recorder_calls():
 
 async def _online_device(
     hass: HomeAssistant, hass_client: Any, aioclient_mock: Any,
-) -> WiCANDeviceSimulator:
+) -> MeatPiDeviceSimulator:
     """A V6 WiCAN Pro that has pushed once (PID entities exist)."""
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
     sim.attach_api(aioclient_mock)
     await sim.async_setup()
     await sim.push_and_settle(
@@ -102,7 +102,7 @@ async def _online_device(
     return sim
 
 
-async def _reconnect_after_gap(sim: WiCANDeviceSimulator) -> None:
+async def _reconnect_after_gap(sim: MeatPiDeviceSimulator) -> None:
     """Simulate the device coming home after an offline drive."""
     sim.go_stale()
     sim.entry.runtime_data.last_history_sync = 0.0  # bypass rate limit
@@ -178,7 +178,7 @@ async def test_sync_disabled_by_option(
     mock_recorder_calls: MagicMock,
 ) -> None:
     """The options kill switch prevents any backfill."""
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
     sim.attach_api(aioclient_mock)
     await sim.async_setup(options={CONF_HISTORY_SYNC: False})
     await sim.push_and_settle(

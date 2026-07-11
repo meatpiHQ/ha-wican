@@ -209,7 +209,7 @@ one.
 ### B2. Product-specific entities (only if needed)
 
 - **Static sensors** (e.g. LTE RSSI, operator): add
-  `WiCANSensorEntityDescription`s in `attributes.py`, keyed by the
+  `MeatPiSensorEntityDescription`s in `attributes.py`, keyed by the
   `status` field names the firmware pushes. If a description must not
   exist on some products, gate it on a profile flag — see
   `requires_obd` on the ECU binary sensor (`attributes.py` +
@@ -253,7 +253,7 @@ Minimum for a new device type:
    payload shape, expected V6 components) — this is mandatory, it is what
    the whole test harness keys off.
 3. Matrix coverage in `tests/test_device_type_matrix.py`: the simulator
-   (`WiCANDeviceSimulator.from_preset`) plus its device-side API
+   (`MeatPiDeviceSimulator.from_preset`) plus its device-side API
    (`SimulatedDeviceApi`, wired via `sim.attach_api(aioclient_mock)`)
    drive the real webhook endpoint, real capability probe, and real
    control commands. Add at least: a happy path (telemetry → entities,

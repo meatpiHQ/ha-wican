@@ -7,18 +7,18 @@ from homeassistant.const import EntityCategory
 
 
 @dataclass(frozen=True, kw_only=True)
-class WiCANBinarySensorEntityDescription(BinarySensorEntityDescription):
+class MeatPiBinarySensorEntityDescription(BinarySensorEntityDescription):
     extra_attributes: list[str] | None = field(default_factory=list)
     requires_obd: bool = False
     """Only create this entity on device types that poll a vehicle
     (profile.supports_obd_pids); a GPS/LTE product has no ECU."""
 
 @dataclass(frozen=True, kw_only=True)
-class WiCANSensorEntityDescription(SensorEntityDescription):
+class MeatPiSensorEntityDescription(SensorEntityDescription):
     extra_attributes: list[str] | None = field(default_factory=list)
 
-SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
-    WiCANSensorEntityDescription(
+SENSOR_DESCRIPTIONS: tuple[MeatPiSensorEntityDescription, ...] = (
+    MeatPiSensorEntityDescription(
         key="batt_voltage",
         translation_key="batt_voltage",
         device_class=SensorDeviceClass.VOLTAGE,
@@ -32,7 +32,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
             "batt_alert_time",
         ],
     ),
-    WiCANSensorEntityDescription(
+    MeatPiSensorEntityDescription(
         key="wifi_mode",
         translation_key="wifi_mode",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -43,7 +43,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
             "mdns",
         ],
     ),
-    WiCANSensorEntityDescription(
+    MeatPiSensorEntityDescription(
         key="vpn_status",
         translation_key="vpn_status",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -51,15 +51,15 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
             "vpn_ip",
         ],
     ),
-    WiCANSensorEntityDescription(
+    MeatPiSensorEntityDescription(
         key="uptime",
         translation_key="uptime",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 )
 
-BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
-    WiCANBinarySensorEntityDescription(
+BINARY_SENSOR_DESCRIPTIONS: tuple[MeatPiBinarySensorEntityDescription, ...] = (
+    MeatPiBinarySensorEntityDescription(
         key="ecu_status",
         translation_key="ecu_status",
         requires_obd=True,
@@ -67,7 +67,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
             "obd_chip_status",
         ],
     ),
-    WiCANBinarySensorEntityDescription(
+    MeatPiBinarySensorEntityDescription(
         key="ble_status",
         translation_key="ble_status",
         entity_category=EntityCategory.DIAGNOSTIC,

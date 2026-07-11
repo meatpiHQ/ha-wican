@@ -5,27 +5,27 @@ from __future__ import annotations
 from homeassistant.exceptions import HomeAssistantError
 
 
-class WiCANError(HomeAssistantError):
+class MeatPiError(HomeAssistantError):
     """Base exception for WiCAN integration."""
 
 
-class WiCANConnectionError(WiCANError):
+class MeatPiConnectionError(MeatPiError):
     """Exception raised when connection to device fails."""
 
 
-class WiCANDeviceNotFoundError(WiCANError):
+class MeatPiDeviceNotFoundError(MeatPiError):
     """Exception raised when device is not reachable."""
 
 
-class WiCANWebhookError(WiCANError):
+class MeatPiWebhookError(MeatPiError):
     """Exception raised for webhook-related errors."""
 
 
-class WiCANDataError(WiCANError):
+class MeatPiDataError(MeatPiError):
     """Exception raised when data from device is invalid or malformed."""
 
 
-class MeatPiApiError(WiCANError):
+class MeatPiApiError(MeatPiError):
     """Exception raised when a device HTTP API request fails.
 
     ``status`` carries the HTTP status code when the failure was an
@@ -49,17 +49,17 @@ class MeatPiApiConnectionError(MeatPiApiError):
     """
 
 
-class WiCANFirmwareError(WiCANError):
+class MeatPiFirmwareError(MeatPiError):
     """Base exception for firmware update errors."""
 
 
-class FirmwareDownloadError(WiCANFirmwareError):
+class FirmwareDownloadError(MeatPiFirmwareError):
     """Raised when firmware download from GitHub fails."""
 
 
-class FirmwareUploadError(WiCANFirmwareError):
+class FirmwareUploadError(MeatPiFirmwareError):
     """Raised when firmware upload to device fails."""
 
 
-class FirmwareVersionNotFoundError(WiCANFirmwareError):
+class FirmwareVersionNotFoundError(MeatPiFirmwareError):
     """Raised when requested firmware version doesn't exist."""

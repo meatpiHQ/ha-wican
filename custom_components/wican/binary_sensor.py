@@ -11,13 +11,13 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .attributes import BINARY_SENSOR_DESCRIPTIONS, WiCANBinarySensorEntityDescription, get_sensor_attributes
-from .entity import WiCANEntity
+from .attributes import BINARY_SENSOR_DESCRIPTIONS, MeatPiBinarySensorEntityDescription, get_sensor_attributes
+from .entity import MeatPiEntity
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -32,28 +32,28 @@ def is_true_status(value: Any) -> bool:
 
 async def async_setup_entry(
     _hass: HomeAssistant,
-    config_entry: WiCANConfigEntry,
+    config_entry: MeatPiConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the binary sensor platform."""
     profile = config_entry.runtime_data.device_profile
     async_add_entities(
-        WiCANBinarySensorEntity(config_entry, description)
+        MeatPiBinarySensorEntity(config_entry, description)
         for description in BINARY_SENSOR_DESCRIPTIONS
         if profile.supports_obd_pids or not description.requires_obd
     )
 
-class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):
+class MeatPiBinarySensorEntity(MeatPiEntity, BinarySensorEntity, RestoreEntity):
     """A binary sensor entity."""
 
     __slots__ = ("_attr_extra_state_attributes", "_attr_is_on")
 
-    entity_description: WiCANBinarySensorEntityDescription
+    entity_description: MeatPiBinarySensorEntityDescription
 
     def __init__(
         self,
-        config_entry: WiCANConfigEntry,
-        entity_description: WiCANBinarySensorEntityDescription,
+        config_entry: MeatPiConfigEntry,
+        entity_description: MeatPiBinarySensorEntityDescription,
     ) -> None:
         super().__init__(config_entry, entity_description)
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"

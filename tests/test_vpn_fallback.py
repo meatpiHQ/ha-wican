@@ -15,7 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 import pytest
 
 from custom_components.wican import _validated_vpn_ip
-from tests.device_sim import WiCANDeviceSimulator
+from tests.device_sim import MeatPiDeviceSimulator
 
 VPN_IP = "100.98.7.6"  # Tailscale-style CGNAT address
 
@@ -70,8 +70,8 @@ def test_validated_vpn_ip_rejects_unsafe(value: Any) -> None:
 
 async def _pro_sim(
     hass: HomeAssistant, hass_client: Any, aioclient_mock: Any,
-) -> WiCANDeviceSimulator:
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
+) -> MeatPiDeviceSimulator:
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
     sim.attach_api(aioclient_mock)
     await sim.async_setup()
     return sim

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from homeassistant.core import HomeAssistant
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,15 +37,15 @@ _LOGGER = logging.getLogger(__name__)
 UPDATE_INTERVAL = timedelta(seconds=WICAN_DATA_UPDATE_INTERVAL)
 
 
-class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+class MeatPiDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching WiCAN data."""
 
-    config_entry: WiCANConfigEntry
+    config_entry: MeatPiConfigEntry
 
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: WiCANConfigEntry,
+        config_entry: MeatPiConfigEntry,
     ) -> None:
         """Initialize the coordinator."""
         self.config_entry = config_entry

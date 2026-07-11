@@ -206,7 +206,7 @@ async def test_sensor_state_restoration(
     with patch(
         "custom_components.wican.async_get_clientsession"
     ), patch(
-        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+        "custom_components.wican.MeatPiDataUpdateCoordinator.async_config_entry_first_refresh"
     ):
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -224,10 +224,10 @@ async def test_sensor_state_restoration(
 def test_get_sensor_attributes_with_none_values():
     """Test get_sensor_attributes when status values are None."""
     from custom_components.wican.attributes import get_sensor_attributes
-    from custom_components.wican.sensor import WiCANSensorEntityDescription
+    from custom_components.wican.sensor import MeatPiSensorEntityDescription
     
     # Create entity description with extra_attributes
-    entity_desc = WiCANSensorEntityDescription(
+    entity_desc = MeatPiSensorEntityDescription(
         key="test_sensor",
         name="Test Sensor",
         extra_attributes=["attr1", "attr2", "attr3"]

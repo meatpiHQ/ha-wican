@@ -20,7 +20,7 @@ import pytest
 
 from custom_components.wican.const import MAX_DYNAMIC_PID_SENSORS
 from custom_components.wican.sensor import DYNAMIC_PID_SENSORS
-from tests.device_sim import WiCANDeviceSimulator
+from tests.device_sim import MeatPiDeviceSimulator
 
 # ===================================================================
 # Group A — hostile values must never wedge the state pipeline
@@ -28,7 +28,7 @@ from tests.device_sim import WiCANDeviceSimulator
 
 
 async def test_bad_voltage_does_not_block_other_entities(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A value HA's state machine rejects must not abort the whole push.
 
@@ -55,7 +55,7 @@ async def test_bad_voltage_does_not_block_other_entities(
 
 
 async def test_garbage_voltage_after_good_value_goes_unknown(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A good value followed by garbage yields 'unknown', then recovers."""
     await device.async_setup()
@@ -70,7 +70,7 @@ async def test_garbage_voltage_after_good_value_goes_unknown(
 
 
 async def test_overlong_status_string_is_truncated(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A status string longer than HA's 255-char limit is truncated, not fatal."""
     await device.async_setup()
@@ -87,7 +87,7 @@ async def test_overlong_status_string_is_truncated(
 
 
 async def test_megabyte_status_value_is_survivable(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A pathologically large (1 MB) status value is truncated and survived."""
     await device.async_setup()
@@ -97,7 +97,7 @@ async def test_megabyte_status_value_is_survivable(
 
 
 async def test_nonfinite_json_payload_is_rejected_and_survivable(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """NaN / Infinity / 1e999 on the wire are rejected at the transport layer.
 
@@ -119,7 +119,7 @@ async def test_nonfinite_json_payload_is_rejected_and_survivable(
 
 
 async def test_nonfinite_floats_injected_internally_are_dropped(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Defense in depth: non-finite floats inside the pipeline are dropped.
 
@@ -153,7 +153,7 @@ async def test_nonfinite_floats_injected_internally_are_dropped(
 
 
 async def test_string_pid_works_and_numeric_pid_gets_statistics(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Text PIDs (gear position) work; numeric PIDs get long-term statistics.
 
@@ -173,7 +173,7 @@ async def test_string_pid_works_and_numeric_pid_gets_statistics(
 
 
 async def test_pid_flips_numeric_to_garbage_and_back(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A numeric PID that glitches to text goes unknown, then recovers."""
     await device.async_setup()
@@ -191,7 +191,7 @@ async def test_pid_flips_numeric_to_garbage_and_back(
 
 
 async def test_bool_values_do_not_break_numeric_sensors(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A JSON true/false in a numeric field is dropped, not written."""
     await device.async_setup()
@@ -201,7 +201,7 @@ async def test_bool_values_do_not_break_numeric_sensors(
 
 
 async def test_unsatisfiable_device_classes_are_ignored(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """timestamp/date/enum classes can never hold a JSON scalar; ignore them.
 
@@ -222,7 +222,7 @@ async def test_unsatisfiable_device_classes_are_ignored(
     assert device.hass.states.get("sensor.wican_sim_trip").state == "12"
 
 
-async def test_null_values_everywhere(device: WiCANDeviceSimulator) -> None:
+async def test_null_values_everywhere(device: MeatPiDeviceSimulator) -> None:
     """A payload of nulls updates nothing and breaks nothing."""
     await device.async_setup()
     await device.push_and_settle(device.status(batt_voltage="12.2V", ecu_status="online"))
@@ -247,7 +247,7 @@ async def test_null_values_everywhere(device: WiCANDeviceSimulator) -> None:
 
 
 async def test_binary_sensor_scalar_interpretations(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Binary sensors interpret scalars; non-scalars keep the last state."""
     await device.async_setup()
@@ -271,14 +271,14 @@ async def test_numeric_device_id_matches_stored_string(
     hass: HomeAssistant, hass_client: Any,
 ) -> None:
     """A firmware that serializes the id as a JSON number still matches."""
-    device = WiCANDeviceSimulator(hass, hass_client, device_id="12345")
+    device = MeatPiDeviceSimulator(hass, hass_client, device_id="12345")
     await device.async_setup()
     resp = await device.push({"status": {"device_id": 12345, "batt_voltage": "12.0V"}})
     assert resp.status == HTTPStatus.NO_CONTENT
 
 
 async def test_non_scalar_device_id_is_rejected(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A structured device_id can never match and is rejected like an impostor."""
     await device.async_setup()
@@ -295,7 +295,7 @@ async def test_numeric_device_id_is_learned_as_string(
     hass: HomeAssistant, hass_client: Any,
 ) -> None:
     """A learned numeric id is stored as a string and keeps matching."""
-    device = WiCANDeviceSimulator(hass, hass_client, device_id=None)
+    device = MeatPiDeviceSimulator(hass, hass_client, device_id=None)
     await device.async_setup(store_device_id=False)
 
     resp = await device.push({"status": {"device_id": 9876, "batt_voltage": "12.0V"}})
@@ -315,7 +315,7 @@ async def test_numeric_device_id_is_learned_as_string(
 
 
 async def test_hostile_device_info_fields_are_not_persisted(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Nested objects / arrays / oversized strings never pollute the entry.
 
@@ -347,7 +347,7 @@ async def test_hostile_device_info_fields_are_not_persisted(
 
 
 async def test_numeric_fw_version_is_stored_as_string(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A firmware that reports its version as a JSON number is tolerated."""
     await device.async_setup()
@@ -356,7 +356,7 @@ async def test_numeric_fw_version_is_stored_as_string(
 
 
 async def test_top_level_device_info_fields_are_read(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Info fields at the payload top level (older firmware) are persisted."""
     await device.async_setup()
@@ -365,7 +365,7 @@ async def test_top_level_device_info_fields_are_read(
 
 
 async def test_reboot_with_new_firmware_updates_entry_and_update_entity(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """After an OTA reboot the new version reaches the entry and update entity."""
     await device.async_setup()
@@ -386,7 +386,7 @@ async def test_reboot_with_new_firmware_updates_entry_and_update_entity(
 
 
 async def test_pid_flood_is_capped(
-    device: WiCANDeviceSimulator, caplog: pytest.LogCaptureFixture,
+    device: MeatPiDeviceSimulator, caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A device inventing endless PID names cannot flood the registry."""
     await device.async_setup()
@@ -413,7 +413,7 @@ async def test_pid_flood_is_capped(
 
 
 async def test_unusable_pid_keys_are_skipped(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Empty / whitespace / oversized PID keys never become entities."""
     await device.async_setup()
@@ -429,7 +429,7 @@ async def test_unusable_pid_keys_are_skipped(
 
 
 async def test_junk_pid_config_is_trimmed_before_persisting(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Only bounded unit/class strings are written to the config entry."""
     await device.async_setup()
@@ -450,7 +450,7 @@ async def test_junk_pid_config_is_trimmed_before_persisting(
 
 
 async def test_corrupt_stored_pid_keys_do_not_break_reload(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """A corrupted config entry (pid_keys not a list) sets up cleanly."""
     await device.async_setup()
@@ -473,7 +473,7 @@ async def test_corrupt_stored_pid_keys_do_not_break_reload(
 
 
 async def test_deeply_nested_json_is_survivable(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A pathologically nested payload cannot take the webhook down."""
     await device.async_setup()
@@ -490,7 +490,7 @@ async def test_deeply_nested_json_is_survivable(
 
 
 async def test_wrong_content_type_with_valid_json_is_tolerated(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A firmware that mislabels its JSON as text/plain still works."""
     await device.async_setup()
@@ -504,7 +504,7 @@ async def test_wrong_content_type_with_valid_json_is_tolerated(
 
 
 async def test_binary_garbage_body_is_rejected_cleanly(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Random bytes (crashed device mid-write) are rejected, then all is well."""
     await device.async_setup()
@@ -521,7 +521,7 @@ async def test_binary_garbage_body_is_rejected_cleanly(
 
 
 async def test_low_accuracy_fix_does_not_teleport_vehicle(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A worse-than-threshold fix is ignored once a good fix exists."""
     await device.async_setup()
@@ -541,7 +541,7 @@ async def test_low_accuracy_fix_does_not_teleport_vehicle(
 
 
 async def test_first_fix_is_accepted_even_with_poor_accuracy(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """With no location at all, any in-range fix beats nothing."""
     await device.async_setup()
@@ -551,7 +551,7 @@ async def test_first_fix_is_accepted_even_with_poor_accuracy(
 
 
 async def test_gps_partial_and_malformed_fields(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Each GPS field is parsed independently; one bad field costs only itself."""
     await device.async_setup()
@@ -590,7 +590,7 @@ async def test_gps_partial_and_malformed_fields(
 
 
 async def test_gps_nan_coordinates_are_ignored(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Non-finite coordinates inside the pipeline never move the tracker."""
     await device.async_setup()
@@ -606,7 +606,7 @@ async def test_gps_nan_coordinates_are_ignored(
     assert state.attributes["latitude"] == 37.0
 
 
-async def test_negative_accuracy_is_clamped(device: WiCANDeviceSimulator) -> None:
+async def test_negative_accuracy_is_clamped(device: MeatPiDeviceSimulator) -> None:
     """A negative accuracy value is nonsense; it is clamped to 0."""
     await device.async_setup()
     await device.push_and_settle(device.gps(12.0, 12.0, accuracy=-50))
@@ -621,7 +621,7 @@ async def test_negative_accuracy_is_clamped(device: WiCANDeviceSimulator) -> Non
 
 
 async def test_concurrent_pushes_do_not_corrupt_state(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A burst of concurrent pushes all succeed and leave consistent state."""
     await device.async_setup()
@@ -638,7 +638,7 @@ async def test_concurrent_pushes_do_not_corrupt_state(
     assert device.coordinator.last_update_success is True
 
 
-async def test_reload_under_fire(device: WiCANDeviceSimulator) -> None:
+async def test_reload_under_fire(device: MeatPiDeviceSimulator) -> None:
     """Reloading while the device keeps pushing loses nothing."""
     await device.async_setup()
     await device.push_and_settle(device.pids({"RPM": 1100}))
@@ -655,7 +655,7 @@ async def test_reload_under_fire(device: WiCANDeviceSimulator) -> None:
 
 
 async def test_unload_cleans_dynamic_pid_state(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Unloading removes the entry's dynamic-PID bookkeeping (no leak)."""
     await device.async_setup()
@@ -668,7 +668,7 @@ async def test_unload_cleans_dynamic_pid_state(
 
 
 async def test_connection_flapping_coalesces_reregistrations(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A device flapping between addresses cannot pile up registration tasks.
 
@@ -706,7 +706,7 @@ async def test_connection_flapping_coalesces_reregistrations(
 
 
 async def test_stale_then_recover_preserves_pid_data(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Going unavailable and recovering never loses previously pushed data."""
     await device.async_setup()
@@ -723,7 +723,7 @@ async def test_stale_then_recover_preserves_pid_data(
     assert device.hass.states.get("sensor.wican_sim_soc").state == "81"
 
 
-async def test_unicode_pid_key_works(device: WiCANDeviceSimulator) -> None:
+async def test_unicode_pid_key_works(device: MeatPiDeviceSimulator) -> None:
     """A non-ASCII PID name becomes a working sensor."""
     await device.async_setup()
     await device.push_and_settle(device.pids({"Темп_Двиг": 88}))
@@ -737,7 +737,7 @@ async def test_unicode_pid_key_works(device: WiCANDeviceSimulator) -> None:
 
 
 async def test_cap_warning_resets_after_reload(
-    device: WiCANDeviceSimulator, caplog: pytest.LogCaptureFixture,
+    device: MeatPiDeviceSimulator, caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The one-time PID-cap warning can fire again after a reload."""
     await device.async_setup()
@@ -751,6 +751,6 @@ async def test_cap_warning_resets_after_reload(
         assert caplog.text.count("distinct PIDs") == 2
 
 
-async def test_default_pid_cap_matches_const(device: WiCANDeviceSimulator) -> None:
+async def test_default_pid_cap_matches_const(device: MeatPiDeviceSimulator) -> None:
     """Sanity: the real cap is high enough for the largest known vehicles."""
     assert MAX_DYNAMIC_PID_SENSORS >= 500

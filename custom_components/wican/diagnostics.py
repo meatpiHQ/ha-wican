@@ -11,7 +11,7 @@ from homeassistant.helpers import entity_registry as er
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
 
 # webhook_url embeds the webhook secret in its path; vpn_ip can be a
 # publicly routable address for the device.
@@ -22,7 +22,7 @@ TO_REDACT = {CONF_WEBHOOK_ID, "webhook_url", "vpn_ip"}
 ATTRIBUTES_TO_REDACT = {"latitude", "longitude"}
 
 
-def _history_sync_diagnostics(config_entry: WiCANConfigEntry) -> dict[str, Any] | None:
+def _history_sync_diagnostics(config_entry: MeatPiConfigEntry) -> dict[str, Any] | None:
     """Summarize the last history-backfill run for diagnostics."""
     result = config_entry.runtime_data.last_history_result
     if result is None:
@@ -43,7 +43,7 @@ def _history_sync_diagnostics(config_entry: WiCANConfigEntry) -> dict[str, Any] 
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, config_entry: WiCANConfigEntry,
+    hass: HomeAssistant, config_entry: MeatPiConfigEntry,
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     coordinator = config_entry.runtime_data.coordinator

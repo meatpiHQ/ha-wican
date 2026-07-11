@@ -15,18 +15,18 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from custom_components.wican.const import MAX_WEBHOOK_BODY_BYTES
-from tests.device_sim import WiCANDeviceSimulator
+from tests.device_sim import MeatPiDeviceSimulator
 
 GZIP_HEADERS = {"Content-Encoding": "gzip"}
 
 
-async def _sim(hass: HomeAssistant, hass_client: Any) -> WiCANDeviceSimulator:
-    sim = WiCANDeviceSimulator(hass, hass_client)
+async def _sim(hass: HomeAssistant, hass_client: Any) -> MeatPiDeviceSimulator:
+    sim = MeatPiDeviceSimulator(hass, hass_client)
     await sim.async_setup()
     return sim
 
 
-async def _assert_alive(hass: HomeAssistant, sim: WiCANDeviceSimulator) -> None:
+async def _assert_alive(hass: HomeAssistant, sim: MeatPiDeviceSimulator) -> None:
     """The telemetry pipeline still works (fresh client after aborts)."""
     sim._client = None
     resp = await sim.push_and_settle(sim.status(batt_voltage="12.2V"))

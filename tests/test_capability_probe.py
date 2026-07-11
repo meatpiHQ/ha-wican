@@ -19,7 +19,7 @@ from custom_components.wican import (
 from custom_components.wican.api import LEGACY_CAPABILITIES, DeviceCapabilities
 from custom_components.wican.button import async_setup_entry as button_setup
 from custom_components.wican.const import API_LEVEL_V6
-from custom_components.wican.models import WiCANRuntimeData
+from custom_components.wican.models import MeatPiRuntimeData
 
 
 def _entry(**data: object) -> MagicMock:
@@ -28,7 +28,7 @@ def _entry(**data: object) -> MagicMock:
     entry.entry_id = "test_entry"
     entry.title = "WiCAN Device"
     entry.data = data
-    entry.runtime_data = WiCANRuntimeData(
+    entry.runtime_data = MeatPiRuntimeData(
         coordinator=MagicMock(),
         github_coordinator=MagicMock(),
         webhook_id="hook",

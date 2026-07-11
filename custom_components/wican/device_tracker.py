@@ -29,7 +29,7 @@ from .const import (
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def _as_finite_float(value: Any) -> float | None:
 
 async def async_setup_entry(
     _hass: HomeAssistant,
-    config_entry: WiCANConfigEntry,
+    config_entry: MeatPiConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the device tracker platform.
@@ -60,13 +60,13 @@ async def async_setup_entry(
     """
 
     # Always create the tracker entity - it will show as unavailable if no GPS data
-    entity = WiCANDeviceTrackerEntity(config_entry)
+    entity = MeatPiDeviceTrackerEntity(config_entry)
     async_add_entities([entity])
 
     _LOGGER.debug("Device tracker entity created for %s", config_entry.title)
 
 
-class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
+class MeatPiDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
     """Represents the GPS location of the WiCAN device.
 
     This entity tracks the physical location of the WiCAN device using
@@ -77,9 +77,9 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
     _attr_translation_key = "location"
     _attr_icon = "mdi:map-marker"
 
-    def __init__(self, config_entry: WiCANConfigEntry) -> None:
+    def __init__(self, config_entry: MeatPiConfigEntry) -> None:
         """Initialize the device tracker entity."""
-        # Initialize CoordinatorEntity directly, not WiCANEntity (which requires entity_description)
+        # Initialize CoordinatorEntity directly, not MeatPiEntity (which requires entity_description)
         CoordinatorEntity.__init__(self, config_entry.runtime_data.coordinator)
 
         self.config_entry = config_entry
@@ -108,7 +108,7 @@ class WiCANDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity):
         if not isinstance(config_url, str) or not config_url.startswith("http"):
             config_url = None
 
-        # Derive manufacturer/model exactly like WiCANEntity.device_info:
+        # Derive manufacturer/model exactly like MeatPiEntity.device_info:
         # the tracker registers against the same device, and a mismatch
         # makes the registry entry flip-flop depending on which entity
         # registered last (a catalog-branded product showed "MeatPi").

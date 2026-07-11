@@ -26,7 +26,7 @@ from custom_components.wican.sensor import (
     _normalize_device_class,
     _trimmed_pid_config,
 )
-from tests.device_sim import WiCANDeviceSimulator
+from tests.device_sim import MeatPiDeviceSimulator
 
 # ===================================================================
 # Coordinator guards
@@ -34,7 +34,7 @@ from tests.device_sim import WiCANDeviceSimulator
 
 
 async def test_listener_isolation_lets_later_listeners_run(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A raising listener must not stop listeners registered after it."""
     await device.async_setup()
@@ -56,7 +56,7 @@ async def test_listener_isolation_lets_later_listeners_run(
 
 
 async def test_notify_failure_does_not_abort_webhook_flow(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """If notifying entities blows up entirely, the handler still finishes.
 
@@ -77,7 +77,7 @@ async def test_notify_failure_does_not_abort_webhook_flow(
 
 
 async def test_coordinator_ignores_non_dict_data(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Non-object data handed to the coordinator directly is ignored."""
     await device.async_setup()
@@ -87,7 +87,7 @@ async def test_coordinator_ignores_non_dict_data(
 
 
 async def test_legacy_numeric_stored_device_id_still_matches(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """An old entry that stored the id as a number matches a string id."""
     await device.async_setup()
@@ -101,7 +101,7 @@ async def test_legacy_numeric_stored_device_id_still_matches(
 
 
 async def test_normalize_keeps_exotic_digit_strings(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Unicode digits that pass isdigit() but fail int() stay untouched."""
     await device.async_setup()
@@ -150,7 +150,7 @@ def test_coerce_numeric_value_edge_types() -> None:
 
 
 async def test_corrupt_entries_in_stored_pid_keys_are_skipped(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """Junk entries inside a stored pid_keys list are skipped on restore."""
     await device.async_setup()
@@ -173,7 +173,7 @@ async def test_corrupt_entries_in_stored_pid_keys_are_skipped(
 
 
 async def test_dispatcher_junk_payloads_are_ignored(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """Junk sent over the shared dispatcher signal never breaks PID discovery."""
     await device.async_setup()
@@ -192,7 +192,7 @@ async def test_dispatcher_junk_payloads_are_ignored(
 
 
 async def test_pid_update_after_unload_race_is_harmless(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """A PID task that runs after the entry's state is gone does nothing."""
     await device.async_setup()
@@ -208,7 +208,7 @@ async def test_pid_update_after_unload_race_is_harmless(
 
 
 async def test_pid_numeric_string_latches_statistics(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """A numeric-as-string PID value is coerced and latches measurement."""
     await device.async_setup()
@@ -239,7 +239,7 @@ async def test_restored_garbage_status_value_is_dropped(
         ),
     )
 
-    device = WiCANDeviceSimulator(hass, hass_client)
+    device = MeatPiDeviceSimulator(hass, hass_client)
     await device.async_setup()
 
     state = hass.states.get("sensor.wican_sim_battery_voltage")
@@ -257,7 +257,7 @@ async def test_startup_deferred_registration_fires_once_started(
 ) -> None:
     """With HA still starting, registration waits for the started event."""
     hass.set_state(CoreState.not_running)
-    device = WiCANDeviceSimulator(hass, hass_client)
+    device = MeatPiDeviceSimulator(hass, hass_client)
     await device.async_setup()
 
     register = AsyncMock(return_value=True)
@@ -276,7 +276,7 @@ async def test_unload_before_startup_cancels_deferred_registration(
 ) -> None:
     """Unloading before HA finishes starting cancels the pending listener."""
     hass.set_state(CoreState.not_running)
-    device = WiCANDeviceSimulator(hass, hass_client)
+    device = MeatPiDeviceSimulator(hass, hass_client)
     await device.async_setup()
 
     assert await hass.config_entries.async_unload(device.entry.entry_id)
@@ -295,7 +295,7 @@ async def test_unload_before_startup_cancels_deferred_registration(
 
 
 async def test_registration_request_after_unload_is_a_noop(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """A late registration request against an unloaded entry does nothing."""
     await device.async_setup()
@@ -308,7 +308,7 @@ async def test_registration_request_after_unload_is_a_noop(
 
 
 async def test_push_racing_unload_gets_503_and_no_error(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """A push whose body read is in flight during unload is dropped cleanly.
 
@@ -344,7 +344,7 @@ async def test_push_racing_unload_gets_503_and_no_error(
 
 
 async def test_unload_during_running_registration_is_clean(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """Unloading mid-registration neither raises nor re-runs the loop.
 
@@ -388,7 +388,7 @@ async def test_unload_during_running_registration_is_clean(
 
 
 async def test_failed_platform_unload_keeps_webhook_registered(
-    device: WiCANDeviceSimulator, hass: HomeAssistant,
+    device: MeatPiDeviceSimulator, hass: HomeAssistant,
 ) -> None:
     """A failed platform unload leaves the entry loaded AND reachable.
 

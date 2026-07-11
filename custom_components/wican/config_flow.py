@@ -355,11 +355,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> WiCANOptionsFlow:
-        return WiCANOptionsFlow(config_entry)
+    ) -> MeatPiOptionsFlow:
+        return MeatPiOptionsFlow(config_entry)
 
 
-class WiCANOptionsFlow(config_entries.OptionsFlow):
+class MeatPiOptionsFlow(config_entries.OptionsFlow):
     """Options flow to configure WiCAN settings."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:

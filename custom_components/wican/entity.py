@@ -11,22 +11,22 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER
-from .coordinator import WiCANDataUpdateCoordinator
+from .coordinator import MeatPiDataUpdateCoordinator
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity import EntityDescription
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
 
 
-class WiCANEntity(CoordinatorEntity[WiCANDataUpdateCoordinator]):
+class MeatPiEntity(CoordinatorEntity[MeatPiDataUpdateCoordinator]):
     """Base entity using DataUpdateCoordinator."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        config_entry: WiCANConfigEntry,
+        config_entry: MeatPiConfigEntry,
         entity_description: EntityDescription,
     ) -> None:
         """Initialize the entity."""

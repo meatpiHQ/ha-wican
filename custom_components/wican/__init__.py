@@ -46,13 +46,13 @@ from .const import (
     WEBHOOK_REGISTRATION_TIMEOUT,
     WEBHOOK_RETRY_DELAY_BASE,
 )
-from .coordinator import WiCANDataUpdateCoordinator
+from .coordinator import MeatPiDataUpdateCoordinator
 from .devices import WICAN_FAMILY_TYPES, get_profile, infer_device_type
-from .exceptions import WiCANWebhookError
+from .exceptions import MeatPiWebhookError
 from .github_releases import GitHubReleasesCoordinator, hardware_stream
 from .helpers import resolve_device_webhook_urls
 from .history import async_remove_history_store, async_sync_history
-from .models import WiCANRuntimeData
+from .models import MeatPiRuntimeData
 from .param_loader import async_update_params_from_github
 
 if TYPE_CHECKING:
@@ -69,14 +69,14 @@ PLATFORMS: list[Platform] = [
 ]
 
 # Type alias for config entry with runtime data
-WiCANConfigEntry = ConfigEntry[WiCANRuntimeData]
+MeatPiConfigEntry = ConfigEntry[MeatPiRuntimeData]
 
 
-class _WebhookEndpointsFailedError(WiCANWebhookError):
+class _WebhookEndpointsFailedError(MeatPiWebhookError):
     """Raised when all webhook endpoints failed for this attempt."""
 
 
-class _WebhookBodyTooLargeError(WiCANWebhookError):
+class _WebhookBodyTooLargeError(MeatPiWebhookError):
     """Raised when a webhook body exceeds the decompressed size cap."""
 
 
@@ -135,7 +135,7 @@ def _is_version_at_least(version: str | None, minimum: tuple[int, ...]) -> bool:
     return padded_version >= padded_minimum
 
 
-def _supports_dual_webhook_urls(entry: WiCANConfigEntry) -> bool:
+def _supports_dual_webhook_urls(entry: MeatPiConfigEntry) -> bool:
     """Return True when the device can accept multiple webhook URLs.
 
     Contract v2: a PRO-stream capability, full stop. WiCAN OBD and USB
@@ -149,7 +149,7 @@ def _supports_dual_webhook_urls(entry: WiCANConfigEntry) -> bool:
 
 def _build_webhook_payload(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     post_interval: int,
 ) -> dict[str, str | bool | int | list[str]]:
     """Build the webhook registration payload for the device firmware."""
@@ -344,7 +344,7 @@ _VPN_DOWN_MARKERS = ("not", "disabled", "disconnected", "off", "down")
 
 def _update_vpn_state(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     data: dict[str, Any],
 ) -> None:
     """Track the device-reported VPN tunnel address from a push payload.
@@ -388,7 +388,7 @@ def _update_vpn_state(
 
 
 def _merge_device_fields(
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     device_info_fields: dict[str, str],
 ) -> tuple[dict[str, Any], bool, bool]:
     """Merge device-reported fields into a copy of the entry data.
@@ -413,7 +413,7 @@ def _merge_device_fields(
 
 def _retarget_release_stream(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     hw_version: Any,
 ) -> None:
     """Point the releases coordinator at a late-learned hardware stream.
@@ -429,7 +429,7 @@ def _retarget_release_stream(
 
 def _react_to_version_changes(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     device_info_fields: dict[str, str],
     new_data: dict[str, Any],
 ) -> None:
@@ -442,7 +442,7 @@ def _react_to_version_changes(
 
 def _persist_device_reported_info(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     data: dict[str, Any],
     request: Request,
 ) -> None:
@@ -511,7 +511,7 @@ def _persist_device_reported_info(
 
 async def async_migrate_entry(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> bool:
     """Migrate old config entries to the current schema.
 
@@ -544,14 +544,14 @@ async def async_migrate_entry(
     return True
 
 
-def _webhook_repair_issue_id(entry: WiCANConfigEntry) -> str:
+def _webhook_repair_issue_id(entry: MeatPiConfigEntry) -> str:
     """Return the repair issue id for a failed webhook registration."""
     return f"webhook_registration_failed_{entry.entry_id}"
 
 
 def _raise_webhook_repair(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     endpoints: str,
 ) -> None:
     """Surface a repair issue when the device cannot be reached to register."""
@@ -569,17 +569,17 @@ def _raise_webhook_repair(
     )
 
 
-def _clear_webhook_repair(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+def _clear_webhook_repair(hass: HomeAssistant, entry: MeatPiConfigEntry) -> None:
     """Clear a previously raised webhook-registration repair issue."""
     ir.async_delete_issue(hass, DOMAIN, _webhook_repair_issue_id(entry))
 
 
-def _firmware_repair_issue_id(entry: WiCANConfigEntry) -> str:
+def _firmware_repair_issue_id(entry: MeatPiConfigEntry) -> str:
     """Return the repair issue id for below-minimum firmware."""
     return f"firmware_update_required_{entry.entry_id}"
 
 
-def _check_minimum_firmware(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+def _check_minimum_firmware(hass: HomeAssistant, entry: MeatPiConfigEntry) -> None:
     """Flag WiCAN devices below the contract-v2 minimum firmware.
 
     Telemetry keeps working regardless; the persistent repair issue tells
@@ -621,7 +621,7 @@ def _check_minimum_firmware(hass: HomeAssistant, entry: WiCANConfigEntry) -> Non
 
 async def async_setup_entry(  # noqa: C901, PLR0915
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> bool:
     """Set up WiCAN from a config entry."""
     # Sync PID parameter definitions (stored copy applies immediately; a
@@ -666,7 +666,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
     post_interval = entry.options.get(CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL)
 
     # Create coordinator for this entry
-    coordinator = WiCANDataUpdateCoordinator(
+    coordinator = MeatPiDataUpdateCoordinator(
         hass,
         entry,
     )
@@ -687,7 +687,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         # Don't fail setup - update entity will just show as unavailable
 
     # Set runtime_data with all necessary data
-    entry.runtime_data = WiCANRuntimeData(
+    entry.runtime_data = MeatPiRuntimeData(
         coordinator=coordinator,
         github_coordinator=github_coordinator,
         webhook_id=webhook_id,
@@ -855,7 +855,7 @@ async def async_setup_entry(  # noqa: C901, PLR0915
 
 
 async def async_unload_entry(
-    hass: HomeAssistant, entry: WiCANConfigEntry,
+    hass: HomeAssistant, entry: MeatPiConfigEntry,
 ) -> bool:
     """Unload a config entry."""
     # Platforms first: if their unload fails the entry stays loaded, and
@@ -869,14 +869,14 @@ async def async_unload_entry(
 
 
 async def async_remove_entry(
-    hass: HomeAssistant, entry: WiCANConfigEntry,
+    hass: HomeAssistant, entry: MeatPiConfigEntry,
 ) -> None:
     """Clean up persisted state when a config entry is removed for good."""
     ir.async_delete_issue(hass, DOMAIN, _firmware_repair_issue_id(entry))
     await async_remove_history_store(hass, entry)
 
 
-def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+def _normalize_connection_urls(hass: HomeAssistant, entry: MeatPiConfigEntry) -> None:
     """Normalize host/mdns URLs by ensuring they have http:// scheme.
 
     This is done once during setup to avoid triggering update listener
@@ -905,7 +905,7 @@ def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> 
         hass.config_entries.async_update_entry(entry, data=updated_data)
 
 
-def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+def _schedule_webhook_registration(hass: HomeAssistant, entry: MeatPiConfigEntry) -> None:
     if hass.is_running:
         hass.async_create_task(_async_request_webhook_registration(hass, entry))
         return
@@ -929,7 +929,7 @@ def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry)
     entry.async_on_unload(_cancel_startup_registration)
 
 
-def _device_api_base_urls(entry: WiCANConfigEntry) -> list[str]:
+def _device_api_base_urls(entry: MeatPiConfigEntry) -> list[str]:
     """Return control-API base URL candidates, most-local first.
 
     Local addresses are tried first; the device-reported VPN tunnel address
@@ -960,7 +960,7 @@ def _device_api_base_urls(entry: WiCANConfigEntry) -> list[str]:
 
 async def _async_request_capability_probe(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> None:
     """Probe device capabilities, coalescing concurrent requests.
 
@@ -985,7 +985,7 @@ async def _async_request_capability_probe(
 
 async def _async_probe_candidates(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     base_urls: list[str],
 ) -> tuple[MeatPiApiClient, DeviceCapabilities | None]:
     """Probe candidates in order; return (winning client, capabilities).
@@ -1020,7 +1020,7 @@ async def _async_probe_candidates(
 
 async def _async_probe_capabilities(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> None:
     """Probe the device control API once and publish the result.
 
@@ -1084,7 +1084,7 @@ async def _async_probe_capabilities(
         _schedule_history_sync(hass, entry)
 
 
-def _schedule_history_sync(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+def _schedule_history_sync(hass: HomeAssistant, entry: MeatPiConfigEntry) -> None:
     """Schedule a history backfill run if enabled, capable, and not rate-limited."""
     runtime = getattr(entry, "runtime_data", None)
     if runtime is None:
@@ -1105,7 +1105,7 @@ def _schedule_history_sync(hass: HomeAssistant, entry: WiCANConfigEntry) -> None
 
 async def _async_request_history_sync(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> None:
     """Run a history backfill, coalescing concurrent requests.
 
@@ -1135,7 +1135,7 @@ async def _async_request_history_sync(
 
 async def _async_request_webhook_registration(
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
 ) -> None:
     """Register the webhook on the device, coalescing concurrent requests.
 
@@ -1170,7 +1170,7 @@ async def _async_request_webhook_registration(
 
 async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
     hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     max_retries: int = WEBHOOK_MAX_RETRIES,
 ) -> bool:
     """Push webhook URL and interval to the WiCAN device with retry."""
@@ -1410,7 +1410,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
     return False
 
 
-async def _async_entry_updated(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+async def _async_entry_updated(hass: HomeAssistant, entry: MeatPiConfigEntry) -> None:
     """Handle config entry updates (options) by re-registering the webhook."""
     # The listener can fire while the entry is tearing down (runtime_data
     # is deleted on unload); the reload that follows re-reads the options.

@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.util import dt as dt_util
 
-from custom_components.wican.coordinator import WiCANDataUpdateCoordinator
+from custom_components.wican.coordinator import MeatPiDataUpdateCoordinator
 
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -24,7 +24,7 @@ async def test_coordinator_initialization(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test coordinator initializes correctly."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
 
     assert coordinator.config_entry == mock_config_entry
     # Coordinator name is the domain (lowercase)
@@ -39,7 +39,7 @@ async def test_coordinator_first_refresh(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test coordinator first refresh succeeds."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
 
     await coordinator.async_config_entry_first_refresh()
 
@@ -54,7 +54,7 @@ async def test_coordinator_handle_webhook_data(
     mock_webhook_data: dict,
 ) -> None:
     """Test coordinator handles webhook data."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
 
     await coordinator.async_config_entry_first_refresh()
 
@@ -71,7 +71,7 @@ async def test_coordinator_device_identity_validation_success(
     mock_webhook_data: dict,
 ) -> None:
     """Test device identity validation passes for correct device."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
 
     # Device ID matches config entry
@@ -86,7 +86,7 @@ async def test_coordinator_device_identity_validation_fails(
     mock_webhook_data: dict,
 ) -> None:
     """Test device identity validation rejects wrong device."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
 
     # Change device_id to simulate wrong device
@@ -103,7 +103,7 @@ async def test_coordinator_device_identity_validation_no_device_id(
     mock_webhook_data: dict,
 ) -> None:
     """Test device identity validation skipped when no device_id."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
 
     # Remove device_id from webhook data
@@ -121,7 +121,7 @@ async def test_coordinator_normalize_sensor_value_voltage(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test sensor value normalization for voltage."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
 
     # Standard format (no space before unit)
     assert coordinator.normalize_sensor_value("batt_voltage", "12.5V") == 12.5
@@ -150,7 +150,7 @@ async def test_coordinator_normalize_sensor_value_numeric_strings(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test sensor value normalization for numeric strings."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
 
     # Integer strings
     assert coordinator.normalize_sensor_value("some_key", "42") == 42
@@ -174,7 +174,7 @@ async def test_coordinator_normalize_sensor_value_none(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test sensor value normalization handles None."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
 
     assert coordinator.normalize_sensor_value("any_key", None) is None
 
@@ -185,7 +185,7 @@ async def test_coordinator_update_listeners_called(
     mock_webhook_data: dict,
 ) -> None:
     """Test coordinator notifies listeners on data update."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
 
     listener_called = False
@@ -214,7 +214,7 @@ async def test_coordinator_fallback_polling(
     mock_webhook_data: dict,
 ) -> None:
     """Test coordinator handles fallback polling (keeps last data)."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
 
     # Set initial data via webhook
@@ -236,7 +236,7 @@ async def test_coordinator_becomes_unavailable_when_stale(
     mock_webhook_data: dict,
 ) -> None:
     """Device goes unavailable when no push arrives within the staleness window."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
 
     # A fresh push keeps the device available.
@@ -258,7 +258,7 @@ async def test_coordinator_recovers_after_new_push(
     mock_webhook_data: dict,
 ) -> None:
     """A new push after staleness recovers availability."""
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
 
     coordinator.handle_webhook_data(mock_webhook_data)
@@ -431,7 +431,7 @@ async def test_rotating_payload_keys_are_capped(
     """
     from custom_components.wican.const import MAX_COORDINATOR_KEYS
 
-    coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
+    coordinator = MeatPiDataUpdateCoordinator(hass, mock_config_entry)
     await coordinator.async_config_entry_first_refresh()
     coordinator.handle_webhook_data(mock_webhook_data)
 

@@ -1,6 +1,6 @@
 """A simulated MeatPi device for end-to-end integration tests.
 
-:class:`WiCANDeviceSimulator` drives the *real* code paths: it pushes data to
+:class:`MeatPiDeviceSimulator` drives the *real* code paths: it pushes data to
 Home Assistant's actual webhook endpoint via ``hass_client`` (so the real
 ``handle_webhook`` handler, coordinator, and entities run), and Home Assistant
 registers / OTA-updates the device through a configurable mock aiohttp session.
@@ -51,7 +51,7 @@ V6_COMPONENTS_FULL: tuple[str, ...] = (
     "event_manager",
 )
 
-# Device-type presets: constructor overrides for WiCANDeviceSimulator plus
+# Device-type presets: constructor overrides for MeatPiDeviceSimulator plus
 # the device-side API shape for SimulatedDeviceApi. Each preset gets its own
 # identity so several presets can coexist in one test.
 DEVICE_PRESETS: dict[str, dict[str, Any]] = {
@@ -379,7 +379,7 @@ class SimulatedDeviceApi:
         return AiohttpClientMockResponse(method, url, json=payload, status=status)
 
 
-class WiCANDeviceSimulator:
+class MeatPiDeviceSimulator:
     """Simulate a WiCAN device talking to the integration."""
 
     def __init__(
@@ -422,7 +422,7 @@ class WiCANDeviceSimulator:
         hass_client_factory: Any,
         preset: str,
         **overrides: Any,
-    ) -> WiCANDeviceSimulator:
+    ) -> MeatPiDeviceSimulator:
         """Create a simulator for one of the DEVICE_PRESETS product types."""
         config = dict(DEVICE_PRESETS[preset])
         api_kwargs = dict(config.pop("api"))

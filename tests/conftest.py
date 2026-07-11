@@ -152,9 +152,9 @@ async def device(hass: HomeAssistant, hass_client):
     Imported lazily to avoid a circular import (device_sim imports
     MockConfigEntry re-exported by this module).
     """
-    from tests.device_sim import WiCANDeviceSimulator
+    from tests.device_sim import MeatPiDeviceSimulator
 
-    return WiCANDeviceSimulator(hass, hass_client)
+    return MeatPiDeviceSimulator(hass, hass_client)
 
 
 @pytest.fixture

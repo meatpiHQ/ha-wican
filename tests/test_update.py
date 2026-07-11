@@ -741,9 +741,9 @@ async def test_ota_prefers_v6_route_with_legacy_fallback(
 
     import aiohttp as aiohttp_mod
 
-    from custom_components.wican.update import WiCANUpdateEntity
+    from custom_components.wican.update import MeatPiUpdateEntity
 
-    entity = WiCANUpdateEntity(init_integration)
+    entity = MeatPiUpdateEntity(init_integration)
     entity.hass = hass
 
     ok = AsyncMock()

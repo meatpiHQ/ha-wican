@@ -20,14 +20,14 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 
-from .attributes import SENSOR_DESCRIPTIONS, WiCANSensorEntityDescription, get_sensor_attributes
+from .attributes import SENSOR_DESCRIPTIONS, MeatPiSensorEntityDescription, get_sensor_attributes
 from .const import (
     DOMAIN,
     MAX_DYNAMIC_PID_SENSORS,
     MAX_PID_CONFIG_FIELD_LENGTH,
     MAX_PID_KEY_LENGTH,
 )
-from .entity import WiCANEntity
+from .entity import MeatPiEntity
 from .param_loader import (
     get_param_device_class,
     get_param_icon,
@@ -39,7 +39,7 @@ from .param_loader import (
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
     from .devices import CatalogSensorDef
 
 _LOGGER = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def _trimmed_pid_config(config: Any) -> dict[str, str]:
 def _build_pid_entity_description(
     pid_key: str,
     config: Any,
-) -> WiCANSensorEntityDescription:
+) -> MeatPiSensorEntityDescription:
     """Build the entity description for a PID sensor from device config."""
     if not isinstance(config, dict):
         config = {}
@@ -230,7 +230,7 @@ def _build_pid_entity_description(
         pid_key, unit, device_class, icon,
     )
 
-    return WiCANSensorEntityDescription(
+    return MeatPiSensorEntityDescription(
         key=pid_key,
         name=pid_key,
         device_class=device_class,
@@ -269,7 +269,7 @@ def _coerce_numeric_value(value: Any) -> int | float | None:
     return None
 
 
-DYNAMIC_PID_SENSORS: dict[str, dict[str, WiCANPidSensorEntity]] = {}
+DYNAMIC_PID_SENSORS: dict[str, dict[str, MeatPiPidSensorEntity]] = {}
 
 # Entries that have already logged the dynamic-PID cap warning.
 _PID_CAP_WARNED: set[str] = set()
@@ -288,13 +288,13 @@ def _warn_pid_cap_once(entry_id: str) -> None:
 
 
 def _discover_new_pid_entities(
-    config_entry: WiCANConfigEntry,
-    sensors: dict[str, WiCANPidSensorEntity],
+    config_entry: MeatPiConfigEntry,
+    sensors: dict[str, MeatPiPidSensorEntity],
     pid_data: dict[str, Any],
     pid_config: dict[str, Any],
-) -> list[WiCANPidSensorEntity]:
+) -> list[MeatPiPidSensorEntity]:
     """Create entities for PID keys not seen before, respecting the cap."""
-    new_entities: list[WiCANPidSensorEntity] = []
+    new_entities: list[MeatPiPidSensorEntity] = []
     for pid_key in pid_data:
         if pid_key in sensors:
             continue
@@ -308,7 +308,7 @@ def _discover_new_pid_entities(
         entity_description = _build_pid_entity_description(
             pid_key, pid_config.get(pid_key, {}),
         )
-        entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
+        entity = MeatPiPidSensorEntity(config_entry, pid_key, entity_description)
         new_entities.append(entity)
         sensors[pid_key] = entity
     return new_entities
@@ -316,8 +316,8 @@ def _discover_new_pid_entities(
 
 def _persist_pid_entities(
     hass: HomeAssistant,
-    config_entry: WiCANConfigEntry,
-    sensors: dict[str, WiCANPidSensorEntity],
+    config_entry: MeatPiConfigEntry,
+    sensors: dict[str, MeatPiPidSensorEntity],
     pid_data: dict[str, Any],
     pid_config: dict[str, Any],
 ) -> None:
@@ -338,7 +338,7 @@ def _persist_pid_entities(
 
 def _build_catalog_sensor_description(
     definition: CatalogSensorDef,
-) -> WiCANSensorEntityDescription:
+) -> MeatPiSensorEntityDescription:
     """Build an entity description from a catalog sensor definition.
 
     Catalog fields are data from a remote document: the device class and
@@ -349,7 +349,7 @@ def _build_catalog_sensor_description(
     if unit is not None and len(unit) > MAX_PID_CONFIG_FIELD_LENGTH:
         unit = None
     device_class = _normalize_device_class(definition.device_class, unit)
-    return WiCANSensorEntityDescription(
+    return MeatPiSensorEntityDescription(
         key=definition.key,
         name=definition.name,
         device_class=device_class,
@@ -363,17 +363,17 @@ def _build_catalog_sensor_description(
 
 async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
-    config_entry: WiCANConfigEntry,
+    config_entry: MeatPiConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the sensor platform."""
 
     async_add_entities(
         [
-            WiCANSensorEntity(config_entry, description)
+            MeatPiSensorEntity(config_entry, description)
             for description in SENSOR_DESCRIPTIONS
         ]
-        + [WiCANLastSeenSensorEntity(config_entry)],
+        + [MeatPiLastSeenSensorEntity(config_entry)],
     )
 
     # Product-specific sensors declared by the device catalog (keys into
@@ -381,7 +381,7 @@ async def async_setup_entry(  # noqa: C901
     catalog_sensors = config_entry.runtime_data.device_profile.extra_sensors
     if catalog_sensors:
         async_add_entities(
-            WiCANSensorEntity(
+            MeatPiSensorEntity(
                 config_entry, _build_catalog_sensor_description(definition),
             )
             for definition in catalog_sensors
@@ -403,7 +403,7 @@ async def async_setup_entry(  # noqa: C901
     pid_config = config_entry.data.get("config", {})
     if not isinstance(pid_config, dict):
         pid_config = {}
-    restored_entities: list[WiCANPidSensorEntity] = []
+    restored_entities: list[MeatPiPidSensorEntity] = []
     for pid_key in pid_keys:
         if not _is_usable_pid_key(pid_key):
             _LOGGER.debug("Skipping unusable stored PID key: %r", pid_key)
@@ -411,7 +411,7 @@ async def async_setup_entry(  # noqa: C901
         entity_description = _build_pid_entity_description(
             pid_key, pid_config.get(pid_key, {}),
         )
-        entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
+        entity = MeatPiPidSensorEntity(config_entry, pid_key, entity_description)
         DYNAMIC_PID_SENSORS[config_entry.entry_id][pid_key] = entity
         restored_entities.append(entity)
     if restored_entities:
@@ -458,17 +458,17 @@ async def async_setup_entry(  # noqa: C901
     config_entry.async_on_unload(unsub)
 
 
-class WiCANSensorEntity(WiCANEntity, RestoreSensor):
+class MeatPiSensorEntity(MeatPiEntity, RestoreSensor):
     """A sensor entity."""
 
     __slots__ = ("_attr_extra_state_attributes", "_attr_native_value", "_dropped_value_reported")
 
-    entity_description: WiCANSensorEntityDescription
+    entity_description: MeatPiSensorEntityDescription
 
     def __init__(
         self,
-        config_entry: WiCANConfigEntry,
-        entity_description: WiCANSensorEntityDescription,
+        config_entry: MeatPiConfigEntry,
+        entity_description: MeatPiSensorEntityDescription,
     ) -> None:
         super().__init__(config_entry, entity_description)
         self._attr_native_value = None
@@ -545,7 +545,7 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
         await super().async_added_to_hass()
 
 
-class WiCANLastSeenSensorEntity(WiCANEntity, RestoreSensor):
+class MeatPiLastSeenSensorEntity(MeatPiEntity, RestoreSensor):
     """When the device last pushed data.
 
     Deliberately stays available while the device is stale: its purpose
@@ -555,10 +555,10 @@ class WiCANLastSeenSensorEntity(WiCANEntity, RestoreSensor):
     downtime.
     """
 
-    def __init__(self, config_entry: WiCANConfigEntry) -> None:
+    def __init__(self, config_entry: MeatPiConfigEntry) -> None:
         super().__init__(
             config_entry,
-            WiCANSensorEntityDescription(
+            MeatPiSensorEntityDescription(
                 key="last_seen",
                 name="Last seen",
                 device_class=SensorDeviceClass.TIMESTAMP,
@@ -596,7 +596,7 @@ class WiCANLastSeenSensorEntity(WiCANEntity, RestoreSensor):
         await super().async_added_to_hass()
 
 
-class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
+class MeatPiPidSensorEntity(MeatPiEntity, RestoreSensor):
     """Dynamic PID sensor entity."""
 
     __slots__ = (
@@ -606,15 +606,15 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
         "_pid_key",
     )
 
-    entity_description: WiCANSensorEntityDescription
+    entity_description: MeatPiSensorEntityDescription
 
     def __init__(
         self,
-        config_entry: WiCANConfigEntry,
+        config_entry: MeatPiConfigEntry,
         pid_key: str,
-        entity_description: WiCANSensorEntityDescription,
+        entity_description: MeatPiSensorEntityDescription,
     ) -> None:
-        _LOGGER.debug("Creating WiCANPidSensorEntity for PID: %s", pid_key)
+        _LOGGER.debug("Creating MeatPiPidSensorEntity for PID: %s", pid_key)
         super().__init__(config_entry, entity_description)
         self._pid_key = pid_key
         self._attr_unique_id = f"{config_entry.entry_id}_pid_{pid_key}"

@@ -176,7 +176,7 @@ pushes but always write state, so staleness/recovery flips render on every
 entity. Product decision (Ali): stale device → unavailable everywhere (HA
 convention, quality-scale `entity-unavailable`), paired with a new
 **"Last seen"** diagnostic timestamp sensor (`sensor.py`,
-`WiCANLastSeenSensorEntity`) that tracks the last push, restores across
+`MeatPiLastSeenSensorEntity`) that tracks the last push, restores across
 restarts, and deliberately *stays available* while the device is stale so
 users can see how old the readings are.
 
@@ -218,7 +218,7 @@ params with a logged exception.
 - **L5** — FIXED (2026-07-11): restored coordinates get the same
   finite + range validation as live fixes, as a lat/lon pair.
 - **L6** — FIXED (2026-07-11): the tracker derives manufacturer/model
-  from the device profile exactly like `WiCANEntity.device_info`.
+  from the device profile exactly like `MeatPiEntity.device_info`.
 - **L7** — FIXED (2026-07-11): diagnostics collect entities via the
   entity registry scoped to the config entry — no sibling leakage, rename
   safe.

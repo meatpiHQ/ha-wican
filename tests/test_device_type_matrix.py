@@ -1,6 +1,6 @@
 """End-to-end tests driving every MeatPi device type through real code paths.
 
-Each test runs a :class:`WiCANDeviceSimulator` (real webhook endpoint, real
+Each test runs a :class:`MeatPiDeviceSimulator` (real webhook endpoint, real
 coordinator, real entities) against a :class:`SimulatedDeviceApi` (the real
 ``MeatPiApiClient`` probing and commanding over the mocked aiohttp session).
 No integration internals are stubbed — the ``mock_capability_probe`` autouse
@@ -26,7 +26,7 @@ from custom_components.wican.devices import (
     DEVICE_TYPE_WICAN,
     DEVICE_TYPE_WICAN_PRO,
 )
-from tests.device_sim import WiCANDeviceSimulator
+from tests.device_sim import MeatPiDeviceSimulator
 
 
 @pytest.fixture
@@ -47,15 +47,15 @@ async def _sim(
     *,
     mode: str = "ok",
     device_type: str | None = None,
-) -> WiCANDeviceSimulator:
+) -> MeatPiDeviceSimulator:
     """Create a preset simulator with its device API attached, and set up."""
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, preset)
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, preset)
     sim.attach_api(aioclient_mock, mode=mode)
     await sim.async_setup(device_type=device_type)
     return sim
 
 
-def _entity_prefix(sim: WiCANDeviceSimulator) -> str:
+def _entity_prefix(sim: MeatPiDeviceSimulator) -> str:
     return sim.title.lower().replace(" ", "_")
 
 
@@ -229,7 +229,7 @@ async def test_device_asleep_at_setup_gains_buttons_when_it_wakes(
     hass: HomeAssistant, hass_client: Any, aioclient_mock: Any,
 ) -> None:
     """A V6 device unreachable at HA start gets its buttons on first push."""
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
     sim.attach_api(aioclient_mock, mode="offline")
     await sim.async_setup()
     prefix = _entity_prefix(sim)
@@ -329,7 +329,7 @@ async def test_hostile_component_flood_is_capped(
     hass: HomeAssistant, hass_client: Any, aioclient_mock: Any,
 ) -> None:
     """A device reporting thousands of components cannot balloon memory."""
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
     api = sim.attach_api(aioclient_mock)
     api.settings_payload = {
         "components": [{"name": f"component_{i}"} for i in range(10000)]
@@ -361,7 +361,7 @@ async def test_malformed_status_shapes_probe_as_legacy(
     status_payload: Any,
 ) -> None:
     """Any non-V6 /api/status shape degrades to legacy without breaking."""
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
     api = sim.attach_api(aioclient_mock)
     api.status_payload = status_payload
     await sim.async_setup()
@@ -376,7 +376,7 @@ async def test_settings_garbage_still_yields_v6_restart(
     hass: HomeAssistant, hass_client: Any, aioclient_mock: Any,
 ) -> None:
     """Garbage in /api/settings loses component gating, not the V6 API."""
-    sim = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
+    sim = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_pro_v6")
     api = sim.attach_api(aioclient_mock)
     api.settings_payload = {"components": "many"}
     await sim.async_setup()
@@ -432,11 +432,11 @@ async def test_two_device_types_are_isolated(
     hass: HomeAssistant, hass_client: Any, aioclient_mock: Any,
 ) -> None:
     """A legacy WiCAN and a V6 ESPNetlink coexist without cross-talk."""
-    legacy = WiCANDeviceSimulator.from_preset(hass, hass_client, "wican_legacy")
+    legacy = MeatPiDeviceSimulator.from_preset(hass, hass_client, "wican_legacy")
     legacy.attach_api(aioclient_mock)
     await legacy.async_setup()
 
-    netlink = WiCANDeviceSimulator.from_preset(hass, hass_client, "espnetlink")
+    netlink = MeatPiDeviceSimulator.from_preset(hass, hass_client, "espnetlink")
     netlink.attach_api(aioclient_mock)
     await netlink.async_setup()
 

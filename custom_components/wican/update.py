@@ -30,7 +30,7 @@ from .const import (
     OTA_LEGACY_ENDPOINT,
     OTA_V6_ENDPOINT,
 )
-from .entity import WiCANEntity
+from .entity import MeatPiEntity
 from .exceptions import (
     FirmwareDownloadError,
     FirmwareUploadError,
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-    from . import WiCANConfigEntry
+    from . import MeatPiConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,14 +62,14 @@ def _tag_version(release: dict[str, Any] | None) -> str:
 
 async def async_setup_entry(
     _hass: HomeAssistant,
-    entry: WiCANConfigEntry,
+    entry: MeatPiConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up WiCAN update entity."""
-    async_add_entities([WiCANUpdateEntity(entry)])
+    async_add_entities([MeatPiUpdateEntity(entry)])
 
 
-class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
+class MeatPiUpdateEntity(MeatPiEntity, UpdateEntity):
     """Representation of WiCAN firmware update entity."""
 
     __slots__ = ("_github_coordinator", "_update_in_progress")
@@ -80,7 +80,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         | UpdateEntityFeature.PROGRESS
     )
 
-    def __init__(self, config_entry: WiCANConfigEntry) -> None:
+    def __init__(self, config_entry: MeatPiConfigEntry) -> None:
         """Initialize the update entity."""
         # Create entity description for parent class
         entity_description = UpdateEntityDescription(
@@ -101,7 +101,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         """Handle WiCAN webhook event.
 
         Update entity doesn't need webhook events - version info comes from coordinator.
-        This is required by WiCANEntity base class.
+        This is required by MeatPiEntity base class.
         """
         # No action needed - version info updated via coordinator
 

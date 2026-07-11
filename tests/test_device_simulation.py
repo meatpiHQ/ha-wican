@@ -1,7 +1,7 @@
 """End-to-end device simulation tests for the WiCAN integration.
 
 These tests drive the integration through a lightweight simulated WiCAN device
-(:class:`WiCANDeviceSimulator`) that exercises the *real* code paths:
+(:class:`MeatPiDeviceSimulator`) that exercises the *real* code paths:
 
 * the device pushes data to Home Assistant's actual webhook endpoint via
   ``hass_client`` (so the real ``handle_webhook`` handler, coordinator, and
@@ -30,7 +30,7 @@ from homeassistant.helpers import issue_registry as ir
 from custom_components.wican.const import CONF_POST_INTERVAL, DOMAIN
 
 from tests.conftest import MockConfigEntry
-from tests.device_sim import WiCANDeviceSimulator
+from tests.device_sim import MeatPiDeviceSimulator
 
 
 # ===================================================================
@@ -38,7 +38,7 @@ from tests.device_sim import WiCANDeviceSimulator
 # ===================================================================
 
 
-async def test_happy_path_full_payload(device: WiCANDeviceSimulator) -> None:
+async def test_happy_path_full_payload(device: MeatPiDeviceSimulator) -> None:
     """A full, well-formed payload populates entities."""
     await device.async_setup()
     resp = await device.push_and_settle(
@@ -60,7 +60,7 @@ async def test_happy_path_full_payload(device: WiCANDeviceSimulator) -> None:
     assert data["gps"]["latitude"] == 37.7749
 
 
-async def test_invalid_json_body_is_rejected(device: WiCANDeviceSimulator) -> None:
+async def test_invalid_json_body_is_rejected(device: MeatPiDeviceSimulator) -> None:
     """A non-JSON body returns 422 and does not crash the handler."""
     await device.async_setup()
     resp = await device.push(raw="this is not json {{{")
@@ -72,7 +72,7 @@ async def test_invalid_json_body_is_rejected(device: WiCANDeviceSimulator) -> No
 
 @pytest.mark.parametrize("body", ["[1, 2, 3]", '"a string"', "42", "true", "null"])
 async def test_non_object_json_is_rejected(
-    device: WiCANDeviceSimulator, body: str,
+    device: MeatPiDeviceSimulator, body: str,
 ) -> None:
     """Valid JSON that is not an object returns 422 and does not crash."""
     await device.async_setup()
@@ -80,7 +80,7 @@ async def test_non_object_json_is_rejected(
     assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
 
-async def test_empty_object_is_accepted(device: WiCANDeviceSimulator) -> None:
+async def test_empty_object_is_accepted(device: MeatPiDeviceSimulator) -> None:
     """An empty JSON object is accepted (no data, no crash)."""
     await device.async_setup()
     resp = await device.push({})
@@ -91,14 +91,14 @@ async def test_empty_object_is_accepted(device: WiCANDeviceSimulator) -> None:
     assert device.coordinator.last_update_success is True
 
 
-async def test_status_wrong_type_is_ignored(device: WiCANDeviceSimulator) -> None:
+async def test_status_wrong_type_is_ignored(device: MeatPiDeviceSimulator) -> None:
     """A ``status`` that is not an object is ignored gracefully."""
     await device.async_setup()
     resp = await device.push_and_settle({"status": "not-a-dict"})
     assert resp.status == HTTPStatus.NO_CONTENT
 
 
-async def test_autopid_and_config_wrong_types(device: WiCANDeviceSimulator) -> None:
+async def test_autopid_and_config_wrong_types(device: MeatPiDeviceSimulator) -> None:
     """Malformed autopid_data/config types never crash entity creation."""
     await device.async_setup()
     resp = await device.push_and_settle(
@@ -112,7 +112,7 @@ async def test_autopid_and_config_wrong_types(device: WiCANDeviceSimulator) -> N
     assert device.hass.states.get("sensor.wican_sim_rpm") is not None
 
 
-async def test_partial_status_only(device: WiCANDeviceSimulator) -> None:
+async def test_partial_status_only(device: MeatPiDeviceSimulator) -> None:
     """A status-only push works with no PID or GPS sections."""
     await device.async_setup()
     resp = await device.push_and_settle(device.status(batt_voltage="11.9V"))
@@ -122,7 +122,7 @@ async def test_partial_status_only(device: WiCANDeviceSimulator) -> None:
     assert state.state == "11.9"
 
 
-async def test_partial_gps_only(device: WiCANDeviceSimulator) -> None:
+async def test_partial_gps_only(device: MeatPiDeviceSimulator) -> None:
     """A GPS-only push makes the tracker available."""
     await device.async_setup()
     await device.push_and_settle(device.gps(51.5, -0.12, accuracy=5))
@@ -131,7 +131,7 @@ async def test_partial_gps_only(device: WiCANDeviceSimulator) -> None:
     assert state.attributes["latitude"] == 51.5
 
 
-async def test_gps_out_of_range_is_ignored(device: WiCANDeviceSimulator) -> None:
+async def test_gps_out_of_range_is_ignored(device: MeatPiDeviceSimulator) -> None:
     """Out-of-range GPS coordinates leave the tracker unavailable."""
     await device.async_setup()
     await device.push_and_settle(device.gps(999.0, 999.0))
@@ -140,7 +140,7 @@ async def test_gps_out_of_range_is_ignored(device: WiCANDeviceSimulator) -> None
     assert state.state == "unavailable"
 
 
-async def test_gps_wrong_types_do_not_crash(device: WiCANDeviceSimulator) -> None:
+async def test_gps_wrong_types_do_not_crash(device: MeatPiDeviceSimulator) -> None:
     """Non-numeric / wrong-typed GPS values are handled without crashing."""
     await device.async_setup()
     resp = await device.push_and_settle(
@@ -160,7 +160,7 @@ async def test_gps_wrong_types_do_not_crash(device: WiCANDeviceSimulator) -> Non
     assert state.attributes["latitude"] == 48.1
 
 
-async def test_battery_voltage_formats(device: WiCANDeviceSimulator) -> None:
+async def test_battery_voltage_formats(device: MeatPiDeviceSimulator) -> None:
     """Various battery-voltage string formats normalize to a float."""
     await device.async_setup()
     for raw_value, expected in (
@@ -175,7 +175,7 @@ async def test_battery_voltage_formats(device: WiCANDeviceSimulator) -> None:
         assert state.state == expected
 
 
-async def test_hostile_value_types_do_not_crash(device: WiCANDeviceSimulator) -> None:
+async def test_hostile_value_types_do_not_crash(device: MeatPiDeviceSimulator) -> None:
     """Nested objects / wrong types in status values do not crash the handler."""
     await device.async_setup()
     resp = await device.push_and_settle(
@@ -195,7 +195,7 @@ async def test_hostile_value_types_do_not_crash(device: WiCANDeviceSimulator) ->
     assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "unknown"
 
 
-async def test_unicode_and_special_chars(device: WiCANDeviceSimulator) -> None:
+async def test_unicode_and_special_chars(device: MeatPiDeviceSimulator) -> None:
     """Unicode / special characters in values are handled."""
     await device.async_setup()
     resp = await device.push_and_settle(
@@ -206,7 +206,7 @@ async def test_unicode_and_special_chars(device: WiCANDeviceSimulator) -> None:
     assert state.state == "Connecté ✓ — 日本語"
 
 
-async def test_large_pid_payload(device: WiCANDeviceSimulator) -> None:
+async def test_large_pid_payload(device: MeatPiDeviceSimulator) -> None:
     """A large batch of PIDs is all processed."""
     await device.async_setup()
     values = {f"pid_{i:03d}": i for i in range(120)}
@@ -217,7 +217,7 @@ async def test_large_pid_payload(device: WiCANDeviceSimulator) -> None:
 
 
 async def test_high_volume_cell_voltages_disabled_by_default(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Per-cell HV voltage PIDs are created disabled by default."""
     from homeassistant.helpers import entity_registry as er
@@ -238,7 +238,7 @@ async def test_high_volume_cell_voltages_disabled_by_default(
     assert device.hass.states.get("sensor.wican_sim_speed") is not None
 
 
-async def test_rapid_successive_pushes(device: WiCANDeviceSimulator) -> None:
+async def test_rapid_successive_pushes(device: MeatPiDeviceSimulator) -> None:
     """Many quick pushes are all handled and the latest value wins."""
     await device.async_setup()
     for voltage in range(10):
@@ -256,7 +256,7 @@ async def test_rapid_successive_pushes(device: WiCANDeviceSimulator) -> None:
 # ===================================================================
 
 
-async def test_identity_mismatch_rejected(device: WiCANDeviceSimulator) -> None:
+async def test_identity_mismatch_rejected(device: MeatPiDeviceSimulator) -> None:
     """A push from a different device_id is rejected with 403."""
     await device.async_setup()
     resp = await device.push(
@@ -267,7 +267,7 @@ async def test_identity_mismatch_rejected(device: WiCANDeviceSimulator) -> None:
 
 async def test_first_device_id_is_learned(hass: HomeAssistant, hass_client: Any) -> None:
     """When no device_id is stored, the first one seen is accepted."""
-    device = WiCANDeviceSimulator(hass, hass_client, device_id="learned_id")
+    device = MeatPiDeviceSimulator(hass, hass_client, device_id="learned_id")
     await device.async_setup(store_device_id=False)
     resp = await device.push({"status": {"device_id": "learned_id", "batt_voltage": "12.1V"}})
     assert resp.status == HTTPStatus.NO_CONTENT
@@ -276,7 +276,7 @@ async def test_first_device_id_is_learned(hass: HomeAssistant, hass_client: Any)
     assert resp2.status == HTTPStatus.FORBIDDEN
 
 
-async def test_missing_device_id_skips_validation(device: WiCANDeviceSimulator) -> None:
+async def test_missing_device_id_skips_validation(device: MeatPiDeviceSimulator) -> None:
     """Legacy pushes without a device_id are accepted (no validation)."""
     await device.async_setup()
     resp = await device.push_and_settle({"status": {"batt_voltage": "12.2V"}})
@@ -289,7 +289,7 @@ async def test_missing_device_id_skips_validation(device: WiCANDeviceSimulator) 
 
 
 async def test_device_goes_unavailable_then_recovers(
-    device: WiCANDeviceSimulator,
+    device: MeatPiDeviceSimulator,
 ) -> None:
     """Entities go unavailable when the device stops pushing, then recover."""
     await device.async_setup()
@@ -309,7 +309,7 @@ async def test_device_goes_unavailable_then_recovers(
     assert device.hass.states.get("sensor.wican_sim_battery_voltage").state == "12.7"
 
 
-async def test_binary_sensor_truthiness(device: WiCANDeviceSimulator) -> None:
+async def test_binary_sensor_truthiness(device: MeatPiDeviceSimulator) -> None:
     """ECU/BLE binary sensors interpret the device's truthy strings."""
     await device.async_setup()
     await device.push_and_settle(device.status(ecu_status="online", ble_status="enable"))
@@ -424,7 +424,7 @@ async def test_registration_http_error_status(hass: HomeAssistant) -> None:
     assert result is False
 
 
-async def test_unload_is_clean(device: WiCANDeviceSimulator) -> None:
+async def test_unload_is_clean(device: MeatPiDeviceSimulator) -> None:
     """The entry unloads cleanly and the webhook is torn down."""
     await device.async_setup()
     await device.push_and_settle(device.status())
@@ -556,7 +556,7 @@ async def test_new_tracker_entity_id_follows_title(
     hass: HomeAssistant, hass_client: Any,
 ) -> None:
     """A fresh install gets the consistent, title-based tracker entity_id."""
-    dev = WiCANDeviceSimulator(
+    dev = MeatPiDeviceSimulator(
         hass, hass_client, title="My Car", webhook_id="wid_new",
         device_id="new_dev", mac="DD:DD:DD:DD:DD:DD", hostname="wican_new.local",
     )
@@ -567,11 +567,11 @@ async def test_new_tracker_entity_id_follows_title(
 
 async def test_multi_device_isolation(hass: HomeAssistant, hass_client: Any) -> None:
     """Two devices push independently without cross-contaminating entities."""
-    dev_a = WiCANDeviceSimulator(
+    dev_a = MeatPiDeviceSimulator(
         hass, hass_client, title="WiCAN A", webhook_id="wid_a",
         device_id="dev_a", mac="AA:AA:AA:AA:AA:AA", hostname="wican_a.local",
     )
-    dev_b = WiCANDeviceSimulator(
+    dev_b = MeatPiDeviceSimulator(
         hass, hass_client, title="WiCAN B", webhook_id="wid_b",
         device_id="dev_b", mac="BB:BB:BB:BB:BB:BB", hostname="wican_b.local",
     )

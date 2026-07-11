@@ -512,7 +512,7 @@ async def test_pid_sensor_invalid_unit_normalization(
     with patch(
         "custom_components.wican.async_get_clientsession"
     ), patch(
-        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+        "custom_components.wican.MeatPiDataUpdateCoordinator.async_config_entry_first_refresh"
     ):
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -550,7 +550,7 @@ async def test_pid_sensor_device_class_normalization_rpm_speed_mismatch(
     with patch(
         "custom_components.wican.async_get_clientsession"
     ), patch(
-        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+        "custom_components.wican.MeatPiDataUpdateCoordinator.async_config_entry_first_refresh"
     ):
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -585,7 +585,7 @@ async def test_pid_sensor_invalid_device_class_string(
     with patch(
         "custom_components.wican.async_get_clientsession"
     ), patch(
-        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+        "custom_components.wican.MeatPiDataUpdateCoordinator.async_config_entry_first_refresh"
     ):
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -996,7 +996,7 @@ async def test_pid_sensor_invalid_device_class_unit_combo_filtered(
     with patch(
         "custom_components.wican.async_get_clientsession"
     ), patch(
-        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+        "custom_components.wican.MeatPiDataUpdateCoordinator.async_config_entry_first_refresh"
     ):
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
