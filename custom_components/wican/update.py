@@ -26,8 +26,9 @@ from .const import (
     GITHUB_API_TIMEOUT,
     GITHUB_OWNER,
     GITHUB_REPO,
-    OTA_ENDPOINT,
     OTA_FORM_FIELD,
+    OTA_LEGACY_ENDPOINT,
+    OTA_V6_ENDPOINT,
 )
 from .entity import WiCANEntity
 from .exceptions import (
@@ -449,11 +450,38 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         if not device_host.startswith(("http://", "https://")):
             device_host = f"http://{device_host}"
 
-        url = f"{device_host.rstrip('/')}{OTA_ENDPOINT}"
-        _LOGGER.debug("Uploading firmware %s (%d bytes) to %s", firmware_filename, len(firmware_data), url)
-
         # Get the session without timeout/connector limits that might interfere
         session = async_get_clientsession(self.hass, verify_ssl=False)
+
+        # Contract v2 route first: raw octet-stream to /api/ota/upload.
+        v6_url = f"{device_host.rstrip('/')}{OTA_V6_ENDPOINT}"
+        _LOGGER.debug(
+            "Uploading firmware %s (%d bytes) to %s",
+            firmware_filename, len(firmware_data), v6_url,
+        )
+        try:
+            async with asyncio.timeout(FIRMWARE_UPLOAD_TIMEOUT):
+                response = await session.post(
+                    v6_url,
+                    data=firmware_data,
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+                response.raise_for_status()
+                await response.read()
+        except (TimeoutError, aiohttp.ClientError) as err:
+            # Migration bridge: pre-v5 firmware only serves the legacy
+            # upload route — the very path users take to REACH v5/v6.
+            _LOGGER.info(
+                "V6 OTA route unavailable (%s); using the legacy upload "
+                "route (pre-v5 firmware migration bridge)",
+                err,
+            )
+        else:
+            _LOGGER.info("Firmware uploaded successfully to device (V6 route)")
+            return
+
+        url = f"{device_host.rstrip('/')}{OTA_LEGACY_ENDPOINT}"
+        _LOGGER.debug("Uploading firmware %s (%d bytes) to %s", firmware_filename, len(firmware_data), url)
 
         try:
             # Attempt 1: regular multipart upload (may use chunked transfer encoding).

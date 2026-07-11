@@ -14,6 +14,13 @@
 
 ## Part A — What the device must support
 
+> Contract v2 baseline (integration 3.0): WiCAN firmware minimums are
+> **v6.00 (PRO)** and **v5.00 (OBD/USB)**; below that the integration
+> keeps telemetry but flags "firmware update required". Discovery
+> accepts only `_meatpi._tcp` / `_wican._tcp` service types. WiCAN OBD
+> and USB have no TLS stack — the webhook URL they receive is always a
+> single plain-http local URL.
+
 A device works with the integration at one of two levels. **Level 1 is
 mandatory**; Level 2 unlocks control entities (buttons, and future
 switches/numbers) and capability discovery.

@@ -63,15 +63,17 @@ for the firmware `update` entity.
 The integration auto-discovers devices via Zeroconf. Manifest subscribes to:
 - `_meatpi._tcp.local.` (any MeatPi product)
 - `_wican._tcp.local.`
-- `_http._tcp.local.` (legacy fallback)
 
 (Source: `manifest.json` → `zeroconf`.)
 
-A discovered service is **accepted as a MeatPi device** if **any** is true
-(`config_flow.py::async_step_zeroconf`):
-- the service **type** starts with `_meatpi.` or `_wican.` (name-independent), **or**
-- (legacy `_http._tcp` only) the **instance name** is exactly `WiCAN-WebServer`, **or**
-- the **hostname** (lowercased) **starts with** `wican_` (e.g. `wican_a1b2c3.local`).
+A discovered service is **accepted as a MeatPi device** only when the
+service **type** starts with `_meatpi.` or `_wican.` (name-independent).
+Contract v2 removed the legacy `_http._tcp` instance-name/hostname
+matching: firmware advertising only `_http._tcp` is not auto-discovered.
+
+**Minimum firmware (contract v2):** PRO ≥ v6.00, OBD/USB ≥ v5.00. A
+device reporting an older `fw_version` keeps telemetry but raises a
+persistent `firmware_update_required` repair issue in HA until updated.
 
 ### TXT records (mDNS properties)
 Provide these TXT key/values so HA gets a stable unique ID and device metadata:

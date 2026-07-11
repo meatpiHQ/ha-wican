@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ha-wican"
-version = "2.1.0"
+version = "3.0.0"
 description = "Home Assistant integration for MeatPi devices (WiCAN, ESPNetlink, ...)"
 readme = "README.md"
 requires-python = ">=3.12"

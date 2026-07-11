@@ -19,7 +19,16 @@ MAX_POST_INTERVAL = 3600
 WEBHOOK_REGISTRATION_TIMEOUT = 10  # seconds
 WEBHOOK_RETRY_DELAY_BASE = 2  # seconds for exponential backoff
 WEBHOOK_MAX_RETRIES = 3
-PRO_DUAL_WEBHOOK_MIN_FW_VERSION = (4, 49)
+
+# Minimum supported firmware per release stream (device contract v2).
+# Older firmware keeps telemetry working but gets a persistent repair
+# issue telling the user a firmware update is required; legacy device
+# accommodations below these versions are no longer maintained.
+MIN_FIRMWARE_BY_STREAM = {
+    "pro": (6, 0),
+    "obd": (5, 0),
+    "usb": (5, 0),
+}
 
 # IP Caching
 IP_CACHE_DURATION = 300  # 5 minutes in seconds
@@ -143,7 +152,8 @@ FIRMWARE_DOWNLOAD_TIMEOUT = 120  # 2 minutes to download from GitHub
 FIRMWARE_UPLOAD_TIMEOUT = 180  # 3 minutes to upload to device
 GITHUB_API_TIMEOUT = 30  # seconds for GitHub API requests
 FIRMWARE_UPDATE_REBOOT_DELAY = 2  # seconds to wait before refreshing after update
-OTA_ENDPOINT = "/upload/ota.bin"
+OTA_V6_ENDPOINT = "/api/ota/upload"  # contract v2: raw octet-stream body
+OTA_LEGACY_ENDPOINT = "/upload/ota.bin"  # migration bridge for pre-v5 firmware
 OTA_FORM_FIELD = "ota_file"
 
 # Update Coordinator

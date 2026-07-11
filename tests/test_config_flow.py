@@ -263,9 +263,9 @@ async def test_zeroconf_flow_user_declines(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
         hostname="wican_test.local.",
-        name="WiCAN-WebServer._http._tcp.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
         port=80,
-        type="_http._tcp.local.",
+        type="_wican._tcp.local.",
         properties={},
     )
 
@@ -288,11 +288,16 @@ async def test_zeroconf_flow_user_declines(
         # The flow will remain in FORM state until user confirms or dismisses
 
 
-async def test_zeroconf_flow_legacy_firmware(
+async def test_zeroconf_legacy_http_advertisement_rejected(
     hass: HomeAssistant,
     mock_aiohttp_session,
 ) -> None:
-    """Test zeroconf works with older firmware without MAC address."""
+    """Contract v2: the legacy _http._tcp advertisement is not accepted.
+
+    Firmware below the supported minimum advertises only _http._tcp with
+    the WiCAN-WebServer instance name; it must be updated (manual add
+    still works and raises the firmware-update repair issue).
+    """
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
@@ -300,37 +305,17 @@ async def test_zeroconf_flow_legacy_firmware(
         name="WiCAN-WebServer._http._tcp.local.",
         port=80,
         type="_http._tcp.local.",
-        properties={},  # No MAC or device_id (older firmware)
+        properties={},
     )
 
-    # Mock that system is already onboarded (requires confirmation)
-    with patch(
-        "homeassistant.components.onboarding.async_is_onboarded",
-        return_value=True,
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_ZEROCONF},
-            data=discovery_info,
-        )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
 
-        # Should show confirmation form
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "zeroconf_confirm"
-
-        # Confirm the addition
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {},
-        )
-        await hass.async_block_till_done()
-
-        # Should create entry with fallback unique_id (hostname-based)
-        assert result2["type"] == FlowResultType.CREATE_ENTRY
-        assert result2["title"] == "wican_legacy.local."
-        assert result2["description_placeholders"]["webhook_url"] == result2["data"]["webhook_url"]
-        # No MAC address in data for legacy firmware
-        assert "mac" not in result2["data"] or not result2["data"].get("mac")
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "not_wican"
 
 
 async def test_config_flow_user_manual_entry_with_optional_host(
@@ -369,8 +354,8 @@ async def test_config_flow_zeroconf_discovery_with_mac_and_device_id(
         ip_addresses=["192.168.1.100"],
         port=80,
         hostname="wican_abc123.local.",
-        type="_http._tcp.local.",
-        name="WiCAN-WebServer",
+        type="_wican._tcp.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
         properties={"mac": b"AA:BB:CC:DD:EE:FF", "device_id": b"wican_abc123"},
     )
     

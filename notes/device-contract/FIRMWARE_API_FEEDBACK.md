@@ -12,7 +12,7 @@
 | # | Ask | Size | Why |
 |---|---|---|---|
 | 1 | Device identity in `GET /api/status` (or a new `GET /api/info`): `device_type`, `model`, `hw_version`, `device_id`, `mac`, `api_level` | S | Today identity only arrives via webhook push or mDNS TXT; the control API itself is anonymous |
-| 2 | Advertise `_meatpi._tcp.local.` (all products) with TXT `device_type`, `device_id`, `mac` | S | One discovery surface for every current & future product |
+| 2 | Advertise `_meatpi._tcp.local.` (all products) with TXT `device_type`, `device_id`, `mac` — **contract-v2 MANDATORY for v5/v6 firmware** (the integration no longer matches `_http._tcp`) | S | One discovery surface for every current & future product |
 | 3 | `"schema": 1` version field in the webhook push payload | XS | Lets the payload evolve without guess-parsing |
 | 4 | Generic action invocation: `POST /api/actions/<name>` reusing the `/api/events/actions` registry | M | Auto-generated HA buttons/services with zero per-feature integration code |
 | 5 | Keep `/api/webhook` (ha_webhooks) contract identical on every product; document it in `ha_webhooks/HTTP_API.md` as the cross-product contract | XS | It is the one mandatory surface (see ADDING_A_DEVICE.md Part A) |

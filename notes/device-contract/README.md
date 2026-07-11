@@ -1,8 +1,17 @@
-# MeatPi Device Contract
+# MeatPi Device Contract (v2)
 
 Everything a MeatPi device (WiCAN, ESPNetlink, future products) needs to
 implement to work with the Home Assistant integration, and everything the
 integration side needs when a new product is added.
+
+> **Contract v2 (integration 3.0):** legacy accommodations are gone. The
+> integration supports WiCAN firmware **≥ v6.00 (PRO)** and **≥ v5.00
+> (OBD / USB)**. Older firmware keeps basic telemetry but raises a
+> persistent "firmware update required" repair issue in HA — and is no
+> longer auto-discovered (the legacy `_http._tcp` matching was removed).
+> The legacy OTA upload route is deliberately still used as a fallback:
+> it is the bridge that lets pre-v5 devices update to a supported
+> version from HA.
 
 ## Reading order for a new device bring-up
 
@@ -35,8 +44,10 @@ with a stable `device_id` in the payload's `status` object. The
 integration answers `204` on success and expects the device to retry on
 `503` (integration reloading). The device exposes
 `POST /api/webhook` so the integration can (re)register its webhook URL
-and post interval; discovery is via mDNS (`_meatpi._tcp` /
-`_wican._tcp`, or the legacy `_http._tcp` + `wican_` hostname). Anything
-beyond that — control buttons, firmware updates, SD-card history
-backfill — lights up progressively based on the V6 capability probe and
-the published release assets.
+and post interval; discovery is via mDNS (`_meatpi._tcp` or
+`_wican._tcp` service types only — TXT records `mac`, `device_id`,
+`device_type`). WiCAN OBD and USB have no TLS stack: they always
+receive exactly one plain-http local webhook URL (dual/https URLs are a
+PRO capability). Anything beyond that — control buttons, firmware
+updates, SD-card history backfill — lights up progressively based on
+the V6 capability probe and the published release assets.

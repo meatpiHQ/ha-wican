@@ -725,3 +725,64 @@ async def test_progress_reporting_during_update(
         state = hass.states.get("update.wican_device_firmware")
         assert state is not None
         assert state.attributes.get("in_progress") is False
+
+
+async def test_ota_prefers_v6_route_with_legacy_fallback(
+    hass: HomeAssistant,
+    init_integration,
+) -> None:
+    """Contract v2: OTA goes to /api/ota/upload; legacy is the bridge.
+
+    The legacy /upload/ota.bin route is deliberately kept as the
+    migration path — it is how pre-v5 firmware gets updated to a
+    supported version from HA in the first place.
+    """
+    from unittest.mock import MagicMock
+
+    import aiohttp as aiohttp_mod
+
+    from custom_components.wican.update import WiCANUpdateEntity
+
+    entity = WiCANUpdateEntity(init_integration)
+    entity.hass = hass
+
+    ok = AsyncMock()
+    ok.raise_for_status = MagicMock()
+    ok.read = AsyncMock(return_value=b"")
+    ok.text = AsyncMock(return_value="OK")
+
+    posted: list[str] = []
+
+    session = MagicMock()
+    session.post = AsyncMock(side_effect=lambda url, **kw: (posted.append(str(url)), ok)[1])
+    with patch(
+        "custom_components.wican.update.async_get_clientsession",
+        return_value=session,
+    ):
+        await entity._upload_firmware_to_device(b"fw", "wican-fw_obd_v500.bin")
+
+    assert len(posted) == 1
+    assert posted[0].endswith("/api/ota/upload")
+
+    # Pre-v5 firmware 404s the V6 route: the legacy route takes over.
+    posted.clear()
+    bad = AsyncMock()
+    bad.raise_for_status = MagicMock(
+        side_effect=aiohttp_mod.ClientResponseError(
+            request_info=MagicMock(), history=(), status=404,
+        ),
+    )
+
+    def _route(url, **kw):
+        posted.append(str(url))
+        return bad if "/api/ota/" in str(url) else ok
+
+    session.post = AsyncMock(side_effect=_route)
+    with patch(
+        "custom_components.wican.update.async_get_clientsession",
+        return_value=session,
+    ):
+        await entity._upload_firmware_to_device(b"fw", "wican-fw_obd_v500.bin")
+
+    assert posted[0].endswith("/api/ota/upload")
+    assert posted[1].endswith("/upload/ota.bin")

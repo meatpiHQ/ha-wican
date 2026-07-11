@@ -114,6 +114,10 @@ is transient and expected during HA restarts/reloads.
 
 ## Security
 
+- WiCAN OBD and USB have **no TLS stack** — they can never take an
+  `https` webhook URL. The integration always hands them a single
+  plain-http local URL; dual URLs (local http + external https) are a
+  PRO-only capability.
 - The webhook id embedded in the URL path is the shared secret; treat the
   full URL as sensitive.
 - The integration does not send an `Authorization` header or `?token=`
@@ -152,11 +156,13 @@ is transient and expected during HA restarts/reloads.
 
 ## mDNS
 
-- Preferred service: `_meatpi._tcp.local` (any MeatPi product) or
+- Required service: `_meatpi._tcp.local` (any MeatPi product) or
   `_wican._tcp.local` (WiCAN family). Any service of these types is
   accepted by the integration regardless of instance name.
-- Legacy fallback: `_http._tcp.local` with instance `WiCAN-WebServer` or a
-  hostname starting with `wican_`.
+- Contract v2: the legacy `_http._tcp` + instance-name/hostname matching
+  was REMOVED — firmware advertising only `_http._tcp` is not
+  auto-discovered (manual add still works and flags the firmware as
+  below minimum).
 - Hostname: `wican_<id>.local` (or product-appropriate).
 - TXT records the integration reads:
   - `mac=<aa:bb:cc:dd:ee:ff>` — preferred stable unique id

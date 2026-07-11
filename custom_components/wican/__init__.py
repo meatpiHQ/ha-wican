@@ -39,7 +39,7 @@ from .const import (
     IP_CACHE_DURATION,
     MAX_DEVICE_INFO_FIELD_LENGTH,
     MAX_WEBHOOK_BODY_BYTES,
-    PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
+    MIN_FIRMWARE_BY_STREAM,
     PROBE_RETRY_INTERVAL,
     SIGNAL_CAPABILITIES_UPDATED,
     WEBHOOK_MAX_RETRIES,
@@ -136,15 +136,15 @@ def _is_version_at_least(version: str | None, minimum: tuple[int, ...]) -> bool:
 
 
 def _supports_dual_webhook_urls(entry: WiCANConfigEntry) -> bool:
-    """Return True when the device firmware can accept multiple webhook URLs."""
-    hw_version = str(entry.data.get("hw_version", "")).lower()
-    if "pro" not in hw_version:
-        return False
+    """Return True when the device can accept multiple webhook URLs.
 
-    return _is_version_at_least(
-        entry.data.get("fw_version"),
-        PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
-    )
+    Contract v2: a PRO-stream capability, full stop. WiCAN OBD and USB
+    have no TLS stack — they can NEVER take an https URL, so they always
+    get exactly one plain-http local webhook URL. Firmware that ignores
+    an unexpected "urls" field is unaffected by over-offering.
+    """
+    hw_version = str(entry.data.get("hw_version", "")).lower()
+    return "pro" in hw_version
 
 
 def _build_webhook_payload(
@@ -427,6 +427,19 @@ def _retarget_release_stream(
         hass.async_create_task(github.async_request_refresh())
 
 
+def _react_to_version_changes(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    device_info_fields: dict[str, str],
+    new_data: dict[str, Any],
+) -> None:
+    """React to device-reported firmware/hardware version changes."""
+    if "hw_version" in device_info_fields:
+        _retarget_release_stream(hass, entry, new_data.get("hw_version"))
+    if "fw_version" in device_info_fields or "hw_version" in device_info_fields:
+        _check_minimum_firmware(hass, entry)
+
+
 def _persist_device_reported_info(
     hass: HomeAssistant,
     entry: WiCANConfigEntry,
@@ -474,8 +487,7 @@ def _persist_device_reported_info(
 
     hass.config_entries.async_update_entry(entry, data=new_data)
 
-    if "hw_version" in device_info_fields:
-        _retarget_release_stream(hass, entry, new_data.get("hw_version"))
+    _react_to_version_changes(hass, entry, device_info_fields, new_data)
 
     if connection_field_changed:
         entry.runtime_data.device_host = new_data.get("host") or entry.runtime_data.device_host
@@ -560,6 +572,51 @@ def _raise_webhook_repair(
 def _clear_webhook_repair(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
     """Clear a previously raised webhook-registration repair issue."""
     ir.async_delete_issue(hass, DOMAIN, _webhook_repair_issue_id(entry))
+
+
+def _firmware_repair_issue_id(entry: WiCANConfigEntry) -> str:
+    """Return the repair issue id for below-minimum firmware."""
+    return f"firmware_update_required_{entry.entry_id}"
+
+
+def _check_minimum_firmware(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+    """Flag WiCAN devices below the contract-v2 minimum firmware.
+
+    Telemetry keeps working regardless; the persistent repair issue tells
+    the user a firmware update is required (legacy device accommodations
+    are no longer maintained below the minimum). Clears itself once the
+    device reports a supported version. Non-WiCAN products are exempt —
+    their firmware lines version independently.
+    """
+    if entry.data.get(CONF_DEVICE_TYPE) not in WICAN_FAMILY_TYPES:
+        return
+    issue_id = _firmware_repair_issue_id(entry)
+    fw_version = entry.data.get("fw_version")
+    stream = hardware_stream(entry.data.get("hw_version"))
+    minimum = MIN_FIRMWARE_BY_STREAM.get(stream)
+    if (
+        minimum is None
+        or _parse_version(fw_version if isinstance(fw_version, str) else None)
+        is None
+        or _is_version_at_least(fw_version, minimum)
+    ):
+        # Supported, or version not yet known (don't nag before the
+        # device has ever reported one).
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="firmware_update_required",
+        translation_placeholders={
+            "device": entry.title,
+            "installed": str(fw_version),
+            "minimum": f"{minimum[0]}.{minimum[1]:02d}",
+        },
+    )
 
 
 async def async_setup_entry(  # noqa: C901, PLR0915
@@ -783,6 +840,10 @@ async def async_setup_entry(  # noqa: C901, PLR0915
         hass.async_create_task(_async_request_capability_probe(hass, entry))
 
         entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+
+        # Contract v2: devices below the minimum firmware keep telemetry
+        # but the user is told an update is required.
+        _check_minimum_firmware(hass, entry)
     except Exception:
         # A failed setup must leave no webhook behind: HA retries setup,
         # and core raises "Handler is already defined!" on a duplicate
@@ -811,6 +872,7 @@ async def async_remove_entry(
     hass: HomeAssistant, entry: WiCANConfigEntry,
 ) -> None:
     """Clean up persisted state when a config entry is removed for good."""
+    ir.async_delete_issue(hass, DOMAIN, _firmware_repair_issue_id(entry))
     await async_remove_history_store(hass, entry)
 
 

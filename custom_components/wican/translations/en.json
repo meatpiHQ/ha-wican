@@ -105,6 +105,10 @@
       }
     },
     "issues": {
+      "firmware_update_required": {
+        "title": "Firmware update required for {device}",
+        "description": "The device \"{device}\" runs firmware {installed}, below the minimum this integration supports ({minimum}).\n\nTelemetry keeps working, but device support below the minimum is no longer maintained and some features will not work correctly.\n\nUpdate the firmware from the device page (the Firmware update entity) or the device's web interface. This issue clears automatically once the device reports a supported version."
+      },
       "webhook_registration_failed": {
         "title": "MeatPi device unreachable",
         "description": "Home Assistant could not register its webhook with the device \"{device}\" after several attempts (tried: {endpoints}).\n\nUntil this is resolved the device will not push updates. Please check that:\n\n1. The device is powered on and connected to the network.\n2. Home Assistant can reach the device at the address above.\n3. The device firewall allows connections on port 80.\n\nThe issue clears automatically once registration succeeds."

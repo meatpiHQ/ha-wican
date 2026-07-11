@@ -497,21 +497,23 @@ def test_is_version_at_least() -> None:
 
 
 def test_supports_dual_webhook_urls() -> None:
-    """_supports_dual_webhook_urls requires a Pro device on new-enough firmware."""
+    """Dual webhook URLs are a PRO capability; OBD/USB are http-only.
+
+    Contract v2: WiCAN OBD and USB have no TLS stack and can never take
+    an https URL — they always get a single plain-http local webhook.
+    """
     from custom_components.wican import _supports_dual_webhook_urls
 
     non_pro = MockConfigEntry(domain=DOMAIN, data={"hw_version": "v3.1"})
     assert _supports_dual_webhook_urls(non_pro) is False
 
-    pro_old = MockConfigEntry(
-        domain=DOMAIN, data={"hw_version": "WiCAN-Pro", "fw_version": "v4.00"},
-    )
-    assert _supports_dual_webhook_urls(pro_old) is False
+    usb = MockConfigEntry(domain=DOMAIN, data={"hw_version": "WiCAN-USB"})
+    assert _supports_dual_webhook_urls(usb) is False
 
-    pro_new = MockConfigEntry(
-        domain=DOMAIN, data={"hw_version": "WiCAN-Pro", "fw_version": "v4.49"},
+    pro = MockConfigEntry(
+        domain=DOMAIN, data={"hw_version": "WiCAN-Pro", "fw_version": "v6.00"},
     )
-    assert _supports_dual_webhook_urls(pro_new) is True
+    assert _supports_dual_webhook_urls(pro) is True
 
 
 async def test_setup_updates_params_from_github(
@@ -560,3 +562,71 @@ async def test_setup_params_update_failure_is_non_fatal(
         await hass.async_block_till_done()
 
     assert mock_config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_firmware_below_minimum_raises_repair_and_clears(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_webhook_data: dict,
+    hass_client,
+) -> None:
+    """Contract v2: old firmware keeps telemetry but demands an update.
+
+    The entry's fw_version (2.00, OBD stream) is below the 5.00 minimum,
+    so setup raises the firmware_update_required repair issue; a push
+    reporting a supported version clears it.
+    """
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = init_integration
+    issue_id = f"firmware_update_required_{entry.entry_id}"
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    # Telemetry still works while flagged.
+    client = await hass_client()
+    payload = dict(mock_webhook_data)
+    payload["status"] = {**payload["status"], "fw_version": "5.01"}
+    resp = await client.post(
+        f"/api/webhook/{entry.data[CONF_WEBHOOK_ID]}", json=payload,
+    )
+    await hass.async_block_till_done()
+
+    assert resp.status == 204
+    assert registry.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_non_wican_products_exempt_from_firmware_minimum(
+    hass: HomeAssistant,
+) -> None:
+    """ESPNetlink and catalog products version independently — no nag."""
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="ESPNetlink",
+        data={
+            "mdns": "http://espnetlink_1.local",
+            CONF_WEBHOOK_ID: "espnetlink_webhook_id",
+            "fw_version": "1.00",
+            "hw_version": "ESPNetlink",
+            "device_type": "espnetlink",
+            "device_id": "netlink_1",
+        },
+        unique_id="espnetlink-test",
+    )
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    registry = ir.async_get(hass)
+    assert (
+        registry.async_get_issue(
+            DOMAIN, f"firmware_update_required_{entry.entry_id}",
+        )
+        is None
+    )

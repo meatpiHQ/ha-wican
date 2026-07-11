@@ -188,14 +188,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not host and not host_ip:
             return self.async_abort(reason="no_host")
 
-        # Accept any MeatPi device: a dedicated service type (_wican._tcp
-        # today, _meatpi._tcp for current/future products), or — for the
-        # legacy _http._tcp fallback — the WiCAN instance name / hostname.
+        # Contract v2: only the dedicated MeatPi service types are
+        # accepted (_wican._tcp / _meatpi._tcp). The legacy _http._tcp
+        # instance-name/hostname matching is gone — firmware below the
+        # supported minimum must be updated (a manual add still works and
+        # surfaces the firmware-update repair issue).
         service_type = (getattr(discovery_info, "type", "") or "").lower()
-        is_meatpi_service = service_type.startswith(("_wican.", "_meatpi."))
-        is_wican_instance = name == "WiCAN-WebServer"
-        is_wican_host = hostname.lower().startswith("wican_")
-        if not (is_meatpi_service or is_wican_instance or is_wican_host):
+        if not service_type.startswith(("_wican.", "_meatpi.")):
             _LOGGER.debug(
                 "Ignoring zeroconf service not matching a MeatPi device: name=%s hostname=%s type=%s",
                 name, hostname, service_type,
