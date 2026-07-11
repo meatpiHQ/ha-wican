@@ -1,11 +1,9 @@
 # MeatPi Device Catalog — Specification
 
-> Status: IMPLEMENTED in the integration 2026-07-10. The catalog repo is
-> **pending**: the integration currently points at the placeholder
-> `https://github.com/meatpiHQ/meatpi-devices` (see `DEVICE_CATALOG_URL`
-> in `const.py` — update it once the real repo exists, and copy the
-> bundled `custom_components/wican/data/device_catalog.json` there as the
-> starting document).
+> Status: IMPLEMENTED in the integration 2026-07-10; the catalog repo
+> `https://github.com/meatpiHQ/meatpi-devices` is LIVE (2026-07-11) with
+> the seed document, a strict CI validator, and the contribution flow in
+> its README. `DEVICE_CATALOG_URL` in `const.py` points at it.
 
 ## What it is
 
@@ -83,15 +81,15 @@ individually, an invalid document is ignored wholesale):
 | `firmware.asset_pattern` | ≤128 chars; reserved for the update platform (not yet consumed) |
 | `sensors[]` | ≤32, deduped by key. `key` = the field in the pushed `status` object (`^[A-Za-z0-9_.-]{1,64}$`). `device_class`/`unit` validated against HA's sensor rules at entity build (bad combos degrade to a plain sensor). `icon` must start `mdi:`. `diagnostic` defaults true. |
 
-## Publishing workflow (once the repo exists)
+## Publishing workflow
 
-1. Create `meatpiHQ/meatpi-devices` with `device_catalog.json` at the
-   repo root, `main` branch (copy the bundled file as the seed).
-2. Update `DEVICE_CATALOG_URL` in `const.py` to the real raw URL and
-   remove the placeholder TODO.
-3. For each new product: add its entry to the repo document (PR review =
-   your release gate), and mirror it into the bundled file at the next
-   integration release so offline installs get it too.
+1. ~~Create `meatpiHQ/meatpi-devices`~~ DONE (2026-07-11): seeded with the
+   bundled document, plus `validate_catalog.py` (strict CI gate mirroring
+   the integration's bounds) and a validation workflow on every PR.
+2. ~~Update `DEVICE_CATALOG_URL`~~ DONE — it points at the live repo.
+3. For each new product: add its entry to the repo document (PR review +
+   green CI = your release gate), and mirror it into the bundled file at
+   the next integration release so offline installs get it too.
 4. Never repurpose a slug, and never delete one that shipped — config
    entries persist slugs; an unknown slug degrades to the generic
    profile (safe, but cosmetically worse).

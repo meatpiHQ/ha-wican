@@ -310,8 +310,9 @@ location history cannot be backfilled.
 (added 2026-07-10, same day, on request; spec: `device-contract/DEVICE_CATALOG.md`)
 
 - **`catalog.py`**: fetch/validate/apply/persist manager for a JSON
-  catalog of device-type definitions published on GitHub (placeholder
-  repo `meatpiHQ/meatpi-devices` — pending). Bundled fallback in
+  catalog of device-type definitions published on GitHub
+  (`meatpiHQ/meatpi-devices`, live since 2026-07-11 with a strict CI
+  validator). Bundled fallback in
   `data/device_catalog.json`; fetched copy persisted in **`.storage`**
   (deliberately not the package dir — the params.json lesson); refresh
   at most once per 24 h; strict bounds on everything (types, slugs,

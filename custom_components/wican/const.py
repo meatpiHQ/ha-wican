@@ -73,7 +73,7 @@ HISTORY_SYNC_MIN_INTERVAL = 300  # seconds between sync runs per entry
 # Remote device catalog: declarative device-type definitions pulled from
 # GitHub (like params.json), so a new MeatPi product gets first-class
 # support without an integration release. Design: notes/device-contract/DEVICE_CATALOG.md.
-# TODO(meatpi): placeholder — point at the real repo once it exists.
+# Living document: https://github.com/meatpiHQ/meatpi-devices
 DEVICE_CATALOG_URL = (
     "https://raw.githubusercontent.com/meatpiHQ/meatpi-devices/main/"
     "device_catalog.json"

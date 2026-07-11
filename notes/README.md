@@ -16,7 +16,7 @@ Start at [device-contract/README.md](device-contract/README.md).
 | [device-contract/DEVICE_ENDPOINTS.md](device-contract/DEVICE_ENDPOINTS.md) | Webhook-registration endpoint + push-payload reference (incl. the GPS section and WiCAN-Pro multi-URL behavior). |
 | [device-contract/HTTP_API.md](device-contract/HTTP_API.md) | Mirror of the WiCAN firmware V6 HTTP API route map (conventions + every `/api/*` surface). Source of truth lives with the firmware; keep in sync. |
 | [device-contract/FIRMWARE_DEVICE_TYPES.md](device-contract/FIRMWARE_DEVICE_TYPES.md) | WiCAN hardware variants, firmware release streams (PRO/USB/OBD), and firmware-asset naming for the update entity. |
-| [device-contract/DEVICE_CATALOG.md](device-contract/DEVICE_CATALOG.md) | The remote device-catalog spec: schema, validation bounds, publishing workflow for `meatpiHQ/meatpi-devices` (repo pending). |
+| [device-contract/DEVICE_CATALOG.md](device-contract/DEVICE_CATALOG.md) | The remote device-catalog spec: schema, validation bounds, publishing workflow for [`meatpiHQ/meatpi-devices`](https://github.com/meatpiHQ/meatpi-devices) (live). |
 | [device-contract/FIRMWARE_API_FEEDBACK.md](device-contract/FIRMWARE_API_FEEDBACK.md) | Requested firmware API changes (device identity, `_meatpi._tcp` mDNS, payload schema version, generic action invoke, logger export route, ESPNetlink telemetry shape) with status per ask. |
 
 ## Living documents (kept current — update these with code changes)
