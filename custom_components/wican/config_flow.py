@@ -117,6 +117,29 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.hass.config_entries.async_schedule_reload(matching.entry_id)
         return True
 
+    def _refresh_configured_entry(self, connection_updates: dict[str, str]) -> None:
+        """Refresh an already configured entry's address from a discovery.
+
+        ``_abort_if_unique_id_configured(updates=...)`` would also do this,
+        but its built-in reload is not allowed for entries that keep an
+        update listener (ours re-registers the webhook when options
+        change), so the reload is scheduled here.
+        """
+        if self.unique_id is None or not connection_updates:
+            return
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(
+            self.handler, self.unique_id,
+        )
+        if entry is None:
+            return
+        if (
+            self.hass.config_entries.async_update_entry(
+                entry, data={**entry.data, **connection_updates},
+            )
+            and entry.state is config_entries.ConfigEntryState.LOADED
+        ):
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle manual setup initiated by the user."""
         if user_input is not None:
@@ -246,7 +269,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             for k, v in {"mdns": mdns_url, CONF_HOST: host_url}.items()
             if v
         }
-        self._abort_if_unique_id_configured(updates=connection_updates)
+        self._refresh_configured_entry(connection_updates)
+        self._abort_if_unique_id_configured()
 
         # The device may already exist as a manual entry keyed by its
         # connection URL rather than this MAC: adopt the stable MAC-based
@@ -330,10 +354,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data["mdns"] = _format_http_url(mdns, None) or mdns
             if host:
                 data["host"] = _format_http_url(host, None) or host
-            return self.async_update_reload_and_abort(
-                reconfigure_entry,
-                data=data,
+            # Scheduled explicitly: async_update_reload_and_abort is not
+            # allowed for entries that keep an update listener (ours
+            # re-registers the webhook when options change).
+            self.hass.config_entries.async_update_entry(
+                reconfigure_entry, data=data,
             )
+            self.hass.config_entries.async_schedule_reload(
+                reconfigure_entry.entry_id,
+            )
+            return self.async_abort(reason="reconfigure_successful")
 
         current = reconfigure_entry.data
         data_schema = vol.Schema(

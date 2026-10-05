@@ -876,3 +876,97 @@ async def test_manual_add_of_discovered_device_aborts(
     assert result2["type"] == FlowResultType.ABORT
     assert result2["reason"] == "already_configured"
     assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_reconfigure_reloads_without_reload_helper(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Reconfiguring a loaded entry reloads it without the reload helper.
+
+    The entry keeps an update listener (it re-registers the webhook when
+    options change), and Home Assistant does not allow its update-and-reload
+    helpers for such entries (deprecated in 2026.6, an error from 2026.12).
+    The flow must update and schedule the reload itself.
+    """
+    entry = init_integration
+    assert entry.update_listeners
+
+    result = await entry.start_reconfigure_flow(hass)
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ) as register,
+        patch("homeassistant.config_entries.report_usage") as report_usage,
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"mdns": "wican_moved.local", "host": "192.168.1.77"},
+        )
+        await hass.async_block_till_done()
+
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "reconfigure_successful"
+    assert entry.data["host"] == "http://192.168.1.77"
+    report_usage.assert_not_called()
+    # Reloaded: the fresh runtime is bound to the new address.
+    assert entry.state is config_entries.ConfigEntryState.LOADED
+    assert entry.runtime_data.device_host == "http://192.168.1.77"
+    assert register.called
+
+
+async def test_zeroconf_rediscovery_reloads_without_reload_helper(
+    hass: HomeAssistant,
+) -> None:
+    """Rediscovery at a new address reloads a loaded entry by itself.
+
+    Same constraint as the reconfigure flow: the unique-id helper's
+    built-in reload is not allowed for entries that keep an update listener.
+    """
+    existing = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="aabbccddeeff",
+        data={
+            CONF_WEBHOOK_ID: "existing",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "mdns": "http://wican_old.local",
+            "host": "http://192.168.1.10",
+        },
+    )
+    existing.add_to_hass(hass)
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.150",
+        ip_addresses=["192.168.1.150"],
+        hostname="wican_new.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={"mac": b"AA:BB:CC:DD:EE:FF"},
+    )
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch("homeassistant.config_entries.report_usage") as report_usage,
+    ):
+        assert await hass.config_entries.async_setup(existing.entry_id)
+        await hass.async_block_till_done()
+        assert existing.update_listeners
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=discovery_info,
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert existing.data["host"] == "http://192.168.1.150"
+    report_usage.assert_not_called()
+    # Reloaded: the fresh runtime is bound to the rediscovered address.
+    assert existing.state is config_entries.ConfigEntryState.LOADED
+    assert existing.runtime_data.device_host == "http://192.168.1.150"
