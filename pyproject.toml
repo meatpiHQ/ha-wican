@@ -20,6 +20,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Home Automation",
 ]
 
@@ -92,11 +93,28 @@ show_missing = true
 # with normal import following (HA core and aiohttp ship type information,
 # so nothing is silently reduced to Any). Run with:
 #   python -m mypy custom_components/wican
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 follow_imports = "normal"
 warn_unused_ignores = true
 files = ["custom_components/wican"]
+
+[[tool.mypy.overrides]]
+# Home Assistant re-exports platform base classes from the component
+# package roots (the supported import paths) without listing them in
+# __all__, which strict mode rejects as implicit re-exports.
+module = [
+    "homeassistant.components.button",
+    "homeassistant.components.device_tracker",
+]
+implicit_reexport = true
+
+[[tool.mypy.overrides]]
+# Home Assistant aliases voluptuous to probatio at runtime (2026.9+) and
+# annotates with probatio types from 2026.10; the separately installed
+# voluptuous package no longer describes the objects `vol` resolves to.
+module = ["voluptuous", "voluptuous.*"]
+follow_imports = "skip"
 
 [tool.ruff]
 line-length = 120

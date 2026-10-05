@@ -623,7 +623,7 @@ class MeatPiPidSensorEntity(MeatPiEntity, RestoreSensor):
         self._dropped_value_reported = False
 
     @property
-    def state_class(self) -> SensorStateClass | str | None:
+    def state_class(self) -> SensorStateClass | None:
         """Return MEASUREMENT once the PID has proven to be numeric.
 
         PID values are usually numbers (rpm, temperature) but can be text

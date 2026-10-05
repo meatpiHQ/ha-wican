@@ -1,12 +1,12 @@
 {
   "domain": "wican",
   "name": "MeatPi",
+  "after_dependencies": [
+    "recorder"
+  ],
   "codeowners": [
     "@meatpiHQ",
     "@jay-oswald"
-  ],
-  "after_dependencies": [
-    "recorder"
   ],
   "config_flow": true,
   "dependencies": [

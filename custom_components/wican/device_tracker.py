@@ -10,7 +10,7 @@ import logging
 from math import isfinite
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.device_tracker.config_entry import TrackerEntity
+from homeassistant.components.device_tracker import TrackerEntity
 from homeassistant.components.device_tracker.const import SourceType
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
@@ -92,7 +92,6 @@ class MeatPiDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity)
         self._attr_latitude: float | None = None
         self._attr_longitude: float | None = None
         self._attr_location_accuracy: int = 0
-        self._attr_location_name: str | None = None
 
         # Additional attributes
         self._altitude: float | None = None
@@ -154,11 +153,6 @@ class MeatPiDeviceTrackerEntity(CoordinatorEntity, TrackerEntity, RestoreEntity)
     def location_accuracy(self) -> int:
         """Return the location accuracy in meters."""
         return self._attr_location_accuracy
-
-    @property
-    def location_name(self) -> str | None:
-        """Return the name of the current location (zone name if in zone)."""
-        return self._attr_location_name
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

@@ -103,10 +103,18 @@ async def test_zeroconf_flow_success(
         },
     )
 
-    # Mock that system is already onboarded (requires confirmation)
-    with patch(
-        "homeassistant.components.onboarding.async_is_onboarded",
-        return_value=True,
+    # Mock that system is already onboarded (requires confirmation); the
+    # created entry is set up for real, so keep its device registration off
+    # the network.
+    with (
+        patch(
+            "homeassistant.components.onboarding.async_is_onboarded",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
     ):
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
@@ -330,15 +338,21 @@ async def test_config_flow_user_manual_entry_with_optional_host(
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
     
-    # Submit with both mdns and optional host
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={
-            "mdns": "wican_test.local",
-            "host": "192.168.1.50",  # Optional host field
-        },
-    )
-    
+    # Submit with both mdns and optional host. The created entry is set up
+    # for real, so keep its device registration off the network.
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                "mdns": "wican_test.local",
+                "host": "192.168.1.50",  # Optional host field
+            },
+        )
+        await hass.async_block_till_done()
+
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"]["mdns"] == "http://wican_test.local"
     assert result["data"]["host"] == "http://192.168.1.50"
@@ -447,15 +461,24 @@ async def test_zeroconf_confirm_webhook_url_exception(
         data=discovery_info,
     )
 
-    # Now confirm with mocked URL resolution that falls back to the current request
-    with patch(
-        "custom_components.wican.config_flow.resolve_webhook_url",
-        return_value="http://192.168.1.10:8123/api/webhook/test_webhook_id",
+    # Now confirm with mocked URL resolution that falls back to the current
+    # request. The created entry is set up for real, so keep its device
+    # registration off the network.
+    with (
+        patch(
+            "custom_components.wican.config_flow.resolve_webhook_url",
+            return_value="http://192.168.1.10:8123/api/webhook/test_webhook_id",
+        ),
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
     ):
         result2 = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {},
         )
+        await hass.async_block_till_done()
 
     assert result2["type"] == FlowResultType.CREATE_ENTRY
     # Title should be the hostname (discovered_name)
@@ -802,11 +825,18 @@ async def test_zeroconf_adopts_existing_manual_entry(
         properties={"mac": b"AA:BB:CC:DD:EE:77"},
     )
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": config_entries.SOURCE_ZEROCONF},
-        data=discovery_info,
-    )
+    # Adoption schedules a reload of the manual entry: let it finish, with
+    # the device registration kept off the network.
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=discovery_info,
+        )
+        await hass.async_block_till_done()
 
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "already_configured"

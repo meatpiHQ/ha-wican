@@ -14,6 +14,16 @@ from custom_components.wican.const import DOMAIN, CONF_POST_INTERVAL, DEFAULT_PO
 from tests.conftest import MockConfigEntry
 
 
+def _accepting_session() -> Mock:
+    """Return a session whose POST succeeds (the device accepts registration)."""
+    response = Mock()
+    response.status = 200
+    response.read = AsyncMock(return_value=b"")
+    session = Mock()
+    session.post = AsyncMock(return_value=response)
+    return session
+
+
 async def test_setup_entry_generates_missing_webhook_id(hass: HomeAssistant) -> None:
     """Test that setup generates webhook_id if missing."""
     # Create entry without webhook_id (older entries)
@@ -195,9 +205,14 @@ async def test_webhook_registration_derives_host_from_ip(hass: HomeAssistant) ->
     )
     entry.add_to_hass(hass)
     
-    # Setup will attempt webhook registration which needs proper mock
-    await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    # The real registration runs (it derives the host) against a device that
+    # accepts it, so nothing touches the network.
+    with patch(
+        "custom_components.wican.async_get_clientsession",
+        return_value=_accepting_session(),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
     
     # Runtime data should have derived host from IP
     assert entry.runtime_data.device_host == "http://192.168.1.50"
@@ -205,9 +220,6 @@ async def test_webhook_registration_derives_host_from_ip(hass: HomeAssistant) ->
 
 async def test_webhook_registration_caches_successful_ip(hass: HomeAssistant) -> None:
     """Test that successful webhook registration caches the resolved IP."""
-    # This test requires mocking the actual webhook POST success which is complex
-    # The IP caching logic (lines 396-423) is tested in integration tests
-    # For now, just verify the setup completes
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"host": "http://192.168.1.100", CONF_WEBHOOK_ID: "test_webhook"},
@@ -215,11 +227,16 @@ async def test_webhook_registration_caches_successful_ip(hass: HomeAssistant) ->
     )
     entry.add_to_hass(hass)
     
-    await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    with patch(
+        "custom_components.wican.async_get_clientsession",
+        return_value=_accepting_session(),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
     
-    # Just verify setup completed and runtime_data exists
     assert entry.runtime_data.device_host == "http://192.168.1.100"
+    assert entry.runtime_data.cached_resolved_ip == "192.168.1.100"
+    assert entry.runtime_data.cache_timestamp > 0
 
 
 async def test_webhook_registration_skips_cache_for_mdns(hass: HomeAssistant) -> None:

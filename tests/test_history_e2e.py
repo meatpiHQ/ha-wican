@@ -25,7 +25,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
-from custom_components.wican.api import MeatPiApiClient
+from custom_components.wican.api import LEGACY_CAPABILITIES, MeatPiApiClient
 from custom_components.wican.const import CONF_HISTORY_SYNC, DOMAIN
 from custom_components.wican.history import async_sync_history
 from tests.device_sim import MeatPiDeviceSimulator
@@ -289,10 +289,17 @@ async def _recorder_entry(
 ) -> tuple[MockConfigEntry, str]:
     """Set up the integration against the real in-memory recorder."""
     mock_config_entry.add_to_hass(hass)
-    with patch(
-        "custom_components.wican._async_register_webhook_on_device",
-        return_value=True,
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        # The round-trip tests swap in a mocked API client below; keep the
+        # setup-time capability probe off the network too.
+        patch("custom_components.wican.MeatPiApiClient") as client_cls,
     ):
+        client_cls.return_value = AsyncMock()
+        client_cls.return_value.async_probe.return_value = LEGACY_CAPABILITIES
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
     registry = er.async_get(hass)
