@@ -18,3 +18,6 @@ bruno/
 .coverage
 
 # Project documentation lives in notes/ (tracked; see notes/README.md)
+
+# Internal working documents (coding standards, quality-scale plans)
+internal-docs/
